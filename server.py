@@ -2,9 +2,10 @@ import os
 import uuid
 import openai
 import random
-import json # Added JSON import
+import json
+import jwt
+import datetime
 from flask import Flask, send_from_directory, request, jsonify
-#from flask_wtf import CSRFProtect
 from flask_security import UserMixin, RoleMixin, SQLAlchemyUserDatastore, Security
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, backref
@@ -16,6 +17,14 @@ from flask_cors import CORS, cross_origin
 from flask_login import LoginManager, login_required, current_user, login_user
 from flask import make_response
 import psycopg2
+
+def create_auth_token_for(user):
+    payload = {
+        'user_id': user.id,  
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)  
+    }
+    token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+    return token.decode()  
 
 app = Flask(__name__)
 
@@ -169,6 +178,8 @@ def logout():
     logout_user()
     return jsonify({'message': 'Logged out'}), 200
 
+from flask import session
+
 @app.route('/login', methods=['POST'])
 @cross_origin(supports_credentials=True) # This will enable CORS for the login route
 def login():
@@ -183,7 +194,9 @@ def login():
     
     if user and user.check_password(password):
         login_user(user)
-        resp = make_response(jsonify(success=True, message='Logged in successfully'), 200)
+        session['logged_in'] = True  
+        auth_token = create_auth_token_for(user)  # Replace with your function to create an auth token
+        resp = make_response(jsonify(success=True, message='Logged in successfully', auth_token=auth_token), 200)
     else:
         resp = make_response(jsonify(success=False, message='Invalid credentials'), 401)
     

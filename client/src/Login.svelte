@@ -1,7 +1,7 @@
 <script>
     import { auth } from './auth.js';
     async function getCsrfToken() {
-        const response = await fetch('https://gptfit-69ea38e54370.herokuapp.com/csrf_token', { 
+        const response = await fetch('./csrf_token', { 
             method: 'GET', 
         });
 
@@ -24,7 +24,7 @@
     async function login() {
         const csrfToken = await getCsrfToken();
     
-        const response = await fetch('https://gptfit-69ea38e54370.herokuapp.com/login', {
+        const response = await fetch('./login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
