@@ -1,0 +1,13 @@
+{
+  "name": "GPTFit",
+  "version": "1.0.0",
+  "description": "My app",
+  "scripts": {
+    "heroku-postbuild": "cd client && npm install && npm run build"
+  },
+  "engines": {
+    "node": "14.x",
+    "npm": "6.x"
+  }
+}
+

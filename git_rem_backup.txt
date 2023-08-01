@@ -1,0 +1,4 @@
+heroku	https://git.heroku.com/gptfit.git (fetch)
+heroku	https://git.heroku.com/gptfit.git (push)
+origin	git@github.com:Lowband21/GPTFit-Flask.git (fetch)
+origin	git@github.com:Lowband21/GPTFit-Flask.git (push)
