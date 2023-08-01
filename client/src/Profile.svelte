@@ -2,24 +2,24 @@
     import { onMount, tick } from 'svelte';
 
     let user = {
-        name: '',
-        age: '',
-        height: '',
-        weight: '',
-        gender: '',
-        years_trained: '',
-        type: '',
-        fitness_level: '',
-        injuries: '',
-        fitness_goal: '',
-        target_timeframe: '',
-        challenges: '',
+        name: 'Unknown',
+        age: null,
+        height: null,
+        weight: null,
+        gender: 'Unknown',
+        years_trained: null,
+        type: 'Unknown',
+        fitness_level: 'Unknown',
+        injuries: 'None',
+        fitness_goal: 'Unknown',
+        target_timeframe: 'Unknown',
+        challenges: 'None',
         favorite_exercises: [],
         exercise_blacklist: [],
-        frequency: '',
+        frequency: null,
         days_cant_train: [],
-        preferred_workout_duration: '', // new field
-        gym_or_home: '', // new field
+        preferred_workout_duration: null, // new field
+        gym_or_home: 'Unknown', // new field
         equipment: [], // new field
     };
 
@@ -27,6 +27,7 @@
 
     let profileExists = false; 
     let dataSaved = false;
+    let error = null; // to store error message
 
     const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const exercises = ['Squats', 'Deadlift', 'Bench Press', 'Pullups', 'Pushups', 'Crunches', 'Lunges'];
@@ -47,6 +48,9 @@
             if (Object.keys(userProfile).length) {  
                 profileExists = true;
             }
+        } else {
+            error = await response.text(); // get error message
+            console.error(error); // print error message to console
         }
     });
 
@@ -66,7 +70,12 @@
             user = { ...user, ...updatedUser };
             profileExists = true;
             dataSaved = true; 
+        } else {
+            error = await response.text(); // get error message
+            console.error(error); // print error message to console
+            alert(error);
         }
+        alert(error);
     }
 </script>
 
