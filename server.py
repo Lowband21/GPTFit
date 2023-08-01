@@ -20,11 +20,7 @@ import psycopg2
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-DATABASE_URI = os.getenv('DATABASE_URL')
-if DATABASE_URI.startswith("postgres://"):
-    print("REPLACING DATABASE URI")
-    DATABASE_URI = DATABASE_URI.replace("postgres://", "postgresql://", 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
 app.config['SECURITY_PASSWORD_SALT'] = os.getenv('SECURITY_PASSWORD_SALT')
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_CHECK_DEFAULT'] = False
@@ -46,10 +42,12 @@ class GeneratedText(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     prompt = db.Column(db.String(5000))
     response = db.Column(db.String(50000))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))  # New field linking the response to a user
 
-    def __init__(self, prompt, response):
+    def __init__(self, prompt, response, user_id):
         self.prompt = prompt
         self.response = response
+        self.user_id = user_id
 
 class Role(db.Model, RoleMixin):
     id = Column(Integer, primary_key=True)
@@ -136,7 +134,7 @@ def generate():
         response_text = response.choices[0].message.content.strip()
 
         # create a new GeneratedText object with the prompt and response, and add it to the db
-        new_generated_text = GeneratedText(prompt, response_text)
+        new_generated_text = GeneratedText(prompt, response_text, current_user.id)
         db.session.add(new_generated_text)
         db.session.commit()
 
@@ -152,7 +150,7 @@ from flask_security import login_user
 def get_responses():
     try:
         # query the database for all responses
-        responses = GeneratedText.query.all()
+        responses = GeneratedText.query.filter_by(user_id=current_user.id)
 
         # convert the list of SQLAlchemy Objects to a list of dictionaries
         responses_list = [{"id": response.id, "prompt": response.prompt, "response": response.response} for response in responses]
