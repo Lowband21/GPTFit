@@ -279,8 +279,7 @@ def profile():
                     # Convert list to JSON string
                     if key in ["favorite_exercises", "exercise_blacklist", "days_cant_train", "equipment"]:
                         value = json.dumps(value)
-                    if isinstance(value, int) or value is None:
-                        setattr(profile, key, value)
+                    setattr(profile, key, value)
             else: # if profile does not exist, create it
                 # Convert lists to JSON strings
                 for key in ["favorite_exercises", "exercise_blacklist", "days_cant_train", "equipment"]:
@@ -293,6 +292,7 @@ def profile():
             return jsonify(success=True)
     except Exception as e:
         return jsonify(error=str(e)), 500
+
 
 @app.route('/auth_status', methods=['GET'])
 def auth_status():

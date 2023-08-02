@@ -2,32 +2,31 @@
     import { onMount, tick } from 'svelte';
 
     let user = {
-        name: 'Unknown',
-        age: null,
-        height: null,
-        weight: null,
-        gender: 'Unknown',
-        years_trained: null,
-        type: 'Unknown',
-        fitness_level: 'Unknown',
-        injuries: 'None',
-        fitness_goal: 'Unknown',
-        target_timeframe: 'Unknown',
-        challenges: 'None',
+        name: 'Name not specified',
+        age: 'Age not specified',
+        height: 'Height not specified',
+        weight: 'Weight not specified',
+        gender: 'Gender not specified',
+        years_trained: 'Years trained not specified',
+        type: 'Type not specified',
+        fitness_level: 'Fitness level not specified',
+        injuries: 'No injuries or health concerns specified',
+        fitness_goal: 'Fitness goal not specified',
+        target_timeframe: 'Target timeframe not specified',
+        challenges: 'No specific challenges specified',
         favorite_exercises: [],
         exercise_blacklist: [],
-        frequency: null,
+        frequency: 'Training frequency not specified',
         days_cant_train: [],
-        preferred_workout_duration: null, // new field
-        gym_or_home: 'Unknown', // new field
-        equipment: [], // new field
+        preferred_workout_duration: 'Preferred workout duration not specified',
+        gym_or_home: 'Gym or home preference not specified',
+        equipment: [],
     };
 
-    const equipmentOptions = ['Dumbbells', 'Barbell', 'Kettlebells', 'Resistance Bands', 'Treadmill', 'Stationary Bike']; // possible options for equipment
-
+    const equipmentOptions = ['Dumbbells', 'Barbell', 'Kettlebells', 'Resistance Bands', 'Treadmill', 'Stationary Bike'];
     let profileExists = false; 
     let dataSaved = false;
-    let error = null; // to store error message
+    let error = null;
 
     const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const exercises = ['Squats', 'Deadlift', 'Bench Press', 'Pullups', 'Pushups', 'Crunches', 'Lunges'];
@@ -75,7 +74,6 @@
             console.error(error); // print error message to console
             alert(error);
         }
-        alert(error);
     }
 </script>
 
@@ -114,7 +112,6 @@
 {#if user}
     <h2>You're logged in!</h2>
     {#if profileExists}
-        <h2> You have a profile saved! </h2>
         {#if dataSaved}
             <p>Your data has been saved successfully!</p>
         {/if}
