@@ -5,7 +5,7 @@ import random
 import json
 import jwt
 import datetime
-from flask import Flask, send_from_directory, request, jsonify
+from flask import Blueprint, Flask, send_from_directory, request, jsonify
 from flask_security import UserMixin, RoleMixin, SQLAlchemyUserDatastore, Security
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, backref
