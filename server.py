@@ -119,15 +119,17 @@ def create_user(email, password):
 #@login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
-# Path for our main Svelte page
-@app.route("/")
-def base():
-    return send_from_directory('client/public', 'index.html')
 
-# Path for all the static files (compiled JS/CSS, etc.)
-@app.route("/<path:path>")
+base_routes = Blueprint('base_routes', __name__)
+
+@base_routes.route('/', defaults={'path': ''})
+@base_routes.route('/<path:path>')
 def home(path):
-    return send_from_directory('client/public', path)
+    # Check if path is a file by checking if it has an extension
+    if splitext(path)[1]:
+        return send_from_directory('client/public', path)
+    else:
+        return send_from_directory('client/public', 'index.html')
 
 @app.route('/generate', methods=['POST'])
 def generate():
