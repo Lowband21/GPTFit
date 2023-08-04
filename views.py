@@ -14,6 +14,7 @@ from models import GeneratedText, User, FitnessProfile
 from app import app, user_datastore, load_user
 from extensions import db
 from flask_security.utils import hash_password, verify_password
+from os.path import splitext
 
 def create_auth_token_for(user):
     payload = {
@@ -23,6 +24,7 @@ def create_auth_token_for(user):
     token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
     return token.decode()
 
+"""
 @app.route("/")
 def base():
     return send_from_directory('client/static', 'index.html')
@@ -30,6 +32,17 @@ def base():
 @app.route("/<path:path>")
 def home(path):
     return send_from_directory('client/static', path)
+"""
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def home(path):
+    # Check if path is a file by checking if it has an extension
+    if splitext(path)[1]:
+        return send_from_directory('client/static', path)
+    else:
+        return send_from_directory('client/static', 'index.html')
+
 
 @app.route('/generate', methods=['POST'])
 @login_required
@@ -120,3 +133,77 @@ def register():
     db.session.commit()
 
     return jsonify(success=True, message='Successfully registered. You can now log in.')
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile(): 
+    try:
+        if request.method == 'GET':
+            profile = FitnessProfile.query.filter_by(user_id=current_user.id).first()
+            if profile:
+                # Convert JSON strings to list
+                favorite_exercises = json.loads(profile.favorite_exercises)
+                exercise_blacklist = json.loads(profile.exercise_blacklist)
+                days_cant_train = json.loads(profile.days_cant_train)
+                equipment = json.loads(profile.equipment)
+
+                return jsonify(
+                    name=profile.name,
+                    age=profile.age,
+                    height=profile.height,
+                    weight=profile.weight,
+                    gender=profile.gender,
+                    years_trained=profile.years_trained,
+                    type=profile.type,
+                    fitness_level=profile.fitness_level,
+                    injuries=profile.injuries,
+                    fitness_goal=profile.fitness_goal,
+                    target_timeframe=profile.target_timeframe,
+                    challenges=profile.challenges,
+                    favorite_exercises=favorite_exercises,
+                    exercise_blacklist=exercise_blacklist,
+                    frequency=profile.frequency,
+                    days_cant_train=days_cant_train,
+                    preferred_workout_duration=profile.preferred_workout_duration,
+                    gym_or_home=profile.gym_or_home,
+                    equipment=equipment
+                )
+            else:
+                return jsonify(error='No profile found'), 404
+        else: # POST request
+            data = request.get_json()
+            profile = FitnessProfile.query.filter_by(user_id=current_user.id).first()
+            if profile:
+                for key, value in data.items():
+                    # Convert list to JSON string
+                    if key in ["favorite_exercises", "exercise_blacklist", "days_cant_train", "equipment"]:
+                        value = json.dumps(value)
+                    setattr(profile, key, value)
+            else: # if profile does not exist, create it
+                # Convert lists to JSON strings
+                for key in ["favorite_exercises", "exercise_blacklist", "days_cant_train", "equipment"]:
+                    if key in data:
+                        data[key] = json.dumps(data[key])
+                profile = FitnessProfile(user_id=current_user.id, **data)
+                db.session.add(profile)
+            
+            db.session.commit()
+            return jsonify(success=True)
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+
+@app.route('/auth_status', methods=['GET'])
+def auth_status():
+    if current_user.is_authenticated:
+        print("Not authenticated")
+        return jsonify(is_authenticated=True, email=current_user.email)
+    else:
+        return jsonify(is_authenticated=False)
+
+from flask_wtf.csrf import generate_csrf
+
+@app.route('/csrf_token', methods=['GET'])
+def csrf_token():
+    token = generate_csrf()
+    return jsonify({'csrfToken': token}), 200
