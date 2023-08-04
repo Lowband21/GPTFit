@@ -9,8 +9,17 @@ import os
 app = Flask(__name__, static_folder='client/static')
 
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///db.sqlite')
 app.config['SECURITY_PASSWORD_SALT'] = os.environ.get('SECURITY_PASSWORD_SALT', os.urandom(32))
+# Get the original connection string
+connection_string = os.getenv('DATABASE_URL', 'sqlite:///db.sqlite')
+
+# Check if it starts with 'postgres://'
+if connection_string.startswith('postgres://'):
+    # Replace the initial 'postgres://' with 'postgresql://'
+    connection_string = 'postgresql://' + connection_string[len('postgres://'):]
+
+# Now set the new connection string
+app.config['SQLALCHEMY_DATABASE_URI'] = connection_string
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_CHECK_DEFAULT'] = False
