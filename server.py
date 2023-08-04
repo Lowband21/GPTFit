@@ -5,7 +5,7 @@ import random
 import json
 import jwt
 import datetime
-from flask import Blueprint, Flask, send_from_directory, request, jsonify
+from flask import Flask, send_from_directory, request, jsonify
 from flask_security import UserMixin, RoleMixin, SQLAlchemyUserDatastore, Security
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, backref
@@ -119,17 +119,15 @@ def create_user(email, password):
 #@login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+# Path for our main Svelte page
+@app.route("/")
+def base():
+    return send_from_directory('client/public', 'index.html')
 
-base_routes = Blueprint('base_routes', __name__)
-
-@base_routes.route('/', defaults={'path': ''})
-@base_routes.route('/<path:path>')
+# Path for all the static files (compiled JS/CSS, etc.)
+@app.route("/<path:path>")
 def home(path):
-    # Check if path is a file by checking if it has an extension
-    if splitext(path)[1]:
-        return send_from_directory('client/public', path)
-    else:
-        return send_from_directory('client/public', 'index.html')
+    return send_from_directory('client/public', path)
 
 @app.route('/generate', methods=['POST'])
 def generate():
