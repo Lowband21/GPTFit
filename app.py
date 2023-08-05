@@ -3,6 +3,7 @@ from flask_security import SQLAlchemyUserDatastore, Security
 from flask_cors import CORS, cross_origin
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from extensions import db, login_manager
+from flask_migrate import Migrate
 from models import User, Role
 import os
 
@@ -30,6 +31,8 @@ app.config['Access-Control-Allow-Credentials'] = True
 db.init_app(app)
 login_manager.init_app(app)
 
+migrate = Migrate(app, db)
+
 csrf = CSRFProtect(app)
 CORS(app, support_credentials=True)
 
@@ -46,7 +49,7 @@ def load_user(user_id):
 def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'), 'favicon.ico')
 
-from views import *
+from routes import *
 
 if __name__ == '__main__':
     app.run(debug=True)

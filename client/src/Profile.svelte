@@ -2,34 +2,39 @@
     import { onMount, tick } from 'svelte';
 
     let user = {
-        name: 'Name not specified',
-        age: 'Age not specified',
-        height: 'Height not specified',
-        weight: 'Weight not specified',
-        gender: 'Gender not specified',
-        years_trained: 'Years trained not specified',
-        type: 'Type not specified',
-        fitness_level: 'Fitness level not specified',
-        injuries: 'No injuries or health concerns specified',
-        fitness_goal: 'Fitness goal not specified',
-        target_timeframe: 'Target timeframe not specified',
-        challenges: 'No specific challenges specified',
+        name: '',
+        age: '',
+        height_unit: 'ft',
+        height: '',
+        weight_unit: 'lbs',
+        weight: '',
+        gender: '',
+        years_trained: '',
+        type: '',
+        fitness_level: '',
+        injuries: '',
+        fitness_goal: '',
+        target_timeframe: '',
+        challenges: '',
         favorite_exercises: [],
         exercise_blacklist: [],
-        frequency: 'Training frequency not specified',
+        frequency: '',
         days_cant_train: [],
-        preferred_workout_duration: 'Preferred workout duration not specified',
-        gym_or_home: 'Gym or home preference not specified',
+        preferred_workout_duration: '',
+        gym_or_home: '',
         equipment: [],
     };
 
     const equipmentOptions = ['Dumbbells', 'Barbell', 'Kettlebells', 'Resistance Bands', 'Treadmill', 'Stationary Bike'];
-    let profileExists = false; 
+    let profileExists = false;
     let dataSaved = false;
     let error = null;
 
     const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const exercises = ['Squats', 'Deadlift', 'Bench Press', 'Pullups', 'Pushups', 'Crunches', 'Lunges'];
+    const genderOptions = ['Male', 'Female', 'Other'];
+    const heightUnits = ['cm', 'ft'];
+    const weightUnits = ['kg', 'lbs'];
 
     onMount(async () => {
         const response = await fetch('./profile', {
@@ -98,7 +103,7 @@
     button {
         padding: 0.5em 1em;
         font-size: 1em;
-        background-color: #008CBA; 
+        background-color: #008CBA;
         border: none;
         color: white;
         cursor: pointer;
@@ -106,6 +111,10 @@
 
     button:hover {
         background-color: #007B9A;
+    }
+
+    h3 {
+        margin-top: 2em;
     }
 </style>
 
@@ -117,55 +126,83 @@
         {/if}
     {/if}
     <form on:submit|preventDefault={saveProfile}>
-        <label>Name: <input bind:value={user.name}></label>
-        <label>Age: <input bind:value={user.age} type="number"></label>
-        <label>Height: <input bind:value={user.height}></label>
-        <label>Weight: <input bind:value={user.weight}></label>
-        <label>Gender: <input bind:value={user.gender}></label>
-        <label>Years Trained: <input bind:value={user.years_trained} type="number"></label>
-        <label>Type: <input bind:value={user.type}></label>
-        <label>Fitness Level: <input bind:value={user.fitness_level}></label>
-        <label>Injuries or Health Concerns: <input bind:value={user.injuries}></label>
-        <label>Fitness Goal: <input bind:value={user.fitness_goal}></label>
-        <label>Target Timeframe: <input bind:value={user.target_timeframe}></label>
-        <label>Specific Challenges: <input bind:value={user.challenges}></label>
-        <label>Favorite Exercises: 
+        <h3>Personal Information</h3>
+        <label>Name: <input bind:value={user.name} placeholder="Enter your name"></label>
+        <label>Age: <input bind:value={user.age} type="number" min="0" placeholder="Enter your age"></label>
+        <label>
+            Height: 
+            <input bind:value={user.height} type="number" min="0" placeholder="Enter your height">
+            <select bind:value={user.height_unit}>
+                {#each heightUnits as unit}
+                    <option value={unit}>{unit}</option>
+                {/each}
+            </select>
+        </label>
+        <label>
+            Weight: 
+            <input bind:value={user.weight} type="number" min="0" placeholder="Enter your weight">
+            <select bind:value={user.weight_unit}>
+                {#each weightUnits as unit}
+                    <option value={unit}>{unit}</option>
+                {/each}
+            </select>
+        </label>
+        <label>Gender:
+            <select bind:value={user.gender}>
+                <option value="">Select...</option>
+                {#each genderOptions as gender}
+                    <option value={gender}>{gender}</option>
+                {/each}
+            </select>
+        </label>
+        <h3>Fitness Information</h3>
+        <label>Years Trained: <input bind:value={user.years_trained} type="number" min="0" placeholder="Enter years trained"></label>
+        <label>Fitness Level: <input bind:value={user.fitness_level} placeholder="Enter your fitness level"></label>
+        <label>Injuries or Health Concerns: <input bind:value={user.injuries} placeholder="Enter any injuries or health concerns"></label>
+        <label>Fitness Goal: <input bind:value={user.fitness_goal} placeholder="Enter your fitness goal"></label>
+        <label>Target Timeframe: <input bind:value={user.target_timeframe} placeholder="Enter your target timeframe"></label>
+        <label>Specific Challenges: <input bind:value={user.challenges} placeholder="Enter any specific challenges"></label>
+
+        <h3>Workout Preferences</h3>
+        <label>Favorite Exercises:
             <select bind:value={user.favorite_exercises} multiple>
                 {#each exercises as exercise (exercise)}
                     <option value={exercise}>{exercise}</option>
                 {/each}
             </select>
         </label>
-        <label>Preferred Workout Duration (in minutes): <input bind:value={user.preferred_workout_duration} type="number"></label>
-        <label>Do you workout at gym or home? 
+        <label>Preferred Workout Duration (in minutes): <input bind:value={user.preferred_workout_duration} type="number" min="0" placeholder="Enter preferred workout duration"></label>
+        <label>Do you workout at gym or home?
             <select bind:value={user.gym_or_home}>
                 <option value="">Select...</option>
                 <option value="gym">Gym</option>
                 <option value="home">Home</option>
+                <option value="both">Both</option>
             </select>
         </label>
-        <label>What equipment do you have access to? 
+        <label>What equipment do you have access to?
             <select bind:value={user.equipment} multiple>
                 {#each equipmentOptions as equipment (equipment)}
                     <option value={equipment}>{equipment}</option>
                 {/each}
             </select>
         </label>
-        <label>Exercise Blacklist: 
+        <label>Exercises to Avoid:
             <select bind:value={user.exercise_blacklist} multiple>
                 {#each exercises as exercise (exercise)}
                     <option value={exercise}>{exercise}</option>
                 {/each}
             </select>
         </label>
-        <label>Frequency: <input bind:value={user.frequency} type="number"></label>
-        <label>Days You Can't Train: 
+        <label>Workout Frequency (days per week): <input bind:value={user.frequency} type="number" min="0" placeholder="Enter workout frequency"></label>
+        <label>Days You Can't Train:
             <select bind:value={user.days_cant_train} multiple>
                 {#each daysOfWeek as day (day)}
                     <option value={day}>{day}</option>
                 {/each}
             </select>
         </label>
+
         <button type="submit">Save</button>
     </form>
 {:else}
