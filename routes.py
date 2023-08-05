@@ -39,7 +39,7 @@ def home(path):
 def home(path):
     # Check if path is a file by checking if it has an extension
     if splitext(path)[1]:
-        return send_from_directory('client/static', path)
+        return send_from_directory('client/public', path)
     else:
         return send_from_directory('client/static', 'index.html')
 
@@ -52,10 +52,62 @@ def generate():
         max_tokens = request.json.get('max_tokens', 1000)
 
         response = openai.ChatCompletion.create(
-          model="gpt-3.5-turbo",  # replace with appropriate GPT-4 model when available
-          messages=[{"role": "user", "content": prompt}],
-        )
+          model="gpt-3.5-turbo-16k",  # replace with appropriate GPT-4 model when available
+          messages=[
+            {"role": "system", "content": """You are an expert fitness program builder. You output programs in the following format: 
+=== WORKOUT PLAN ===
 
+Participant Name: {participant_name}
+Goal: {goal}
+
+--- START DATE: {start_date} ---
+
+== MACROCYCLE 1 ==
+Name: {macrocycle1_name}
+Focus: {macrocycle1_focus}
+Duration: {macrocycle1_duration} weeks
+
+=== Microcycle Details ===
+Week 1:
+Day 1:
+  - Exercise: {exercise1_name}
+    - Sets: {exercise1_sets}
+    - Reps: {exercise1_reps}
+    - Weight: {exercise1_weight}
+  - Exercise: {exercise2_name}
+    - Sets: {exercise2_sets}
+    - Reps: {exercise2_reps}
+    - Weight: {exercise2_weight}
+    (Continue as needed for other exercises)
+(Continue as needed for other days)
+
+Week 2:
+(Repeat the structure from week 1 for each day, replacing exercise details accordingly)
+
+Week 3:
+(Repeat the structure from week 1 for each day, replacing exercise details accordingly)
+
+Week 4:
+(Repeat the structure from week 1 for each day, replacing exercise details accordingly)
+
+== MACROCYCLE 2 ==
+(Repeat the structure from macrocycle 1, replacing macrocycle and exercise details accordingly)
+
+== MACROCYCLE 3 ==
+(Repeat the structure from macrocycle 1, replacing macrocycle and exercise details accordingly)
+
+--- END DATE: {end_date} ---
+
+Additional instructions:
+- Warm-up: {warm_up_activities}
+- Cooldown: {cooldown_activities}
+- Hydration and Nutrition: {nutrition_hydration_instructions}
+"""},
+            {"role": "user", "content": prompt},
+          ], 
+          max_tokens=max_tokens,
+        )
+        
         response_text = response.choices[0].message.content.strip()
 
         # create a new GeneratedText object with the prompt and response, and add it to the db
@@ -64,6 +116,25 @@ def generate():
         db.session.commit()
 
         return jsonify(response_text)
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route('/response/<int:id>', methods=['DELETE'])
+@login_required
+def delete_response(id):
+    try:
+        # get the response with the given id
+        response = GeneratedText.query.get(id)
+
+        # ensure the response exists and belongs to the current user
+        if response is None or response.user_id != current_user.id:
+            return jsonify(error='No response found'), 404
+
+        # delete the response
+        db.session.delete(response)
+        db.session.commit()
+
+        return jsonify(success=True), 200
     except Exception as e:
         return jsonify(error=str(e)), 500
 
@@ -151,7 +222,9 @@ def profile():
                     name=profile.name,
                     age=profile.age,
                     height=profile.height,
+                    height_unit=profile.height_unit,
                     weight=profile.weight,
+                    weight_unit=profile.weight_unit,
                     gender=profile.gender,
                     years_trained=profile.years_trained,
                     type=profile.type,

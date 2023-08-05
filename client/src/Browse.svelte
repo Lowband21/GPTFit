@@ -3,6 +3,21 @@
 
     let responses = [];
 
+    async function deleteResponse(id) {
+        const res = await fetch(`/response/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+            }
+        });
+
+        if (res.ok) {
+            responses = responses.filter(response => response.id !== id);
+        } else {
+            console.error('Error deleting response:', await res.json());
+        }
+    }
+
     onMount(async () => {
         const res = await fetch('/responses', {
             headers: {
@@ -42,6 +57,14 @@
       padding: 10px;
       border-radius: 5px;
     }
+    .delete-button {
+        color: white;
+        background-color: red;
+        border: none;
+        padding: 10px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
 </style>
 
 <div class="container">
@@ -50,6 +73,7 @@
         <div class="response-item">
             <h2>{response.prompt}</h2>
             <pre>{response.response}</pre>
+            <button class="delete-button" on:click={() => deleteResponse(response.id)}>Delete</button>
         </div>
     {/each}
 </div>

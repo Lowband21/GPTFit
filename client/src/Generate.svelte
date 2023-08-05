@@ -16,7 +16,7 @@
   // define prompt as a derived store
   const prompt = derived(user, $user => {
     if ($user.name) { // or check for any required property
-      return `My name is ${$user.name} and I am ${$user.age} years old. I am ${$user.height} feet tall and I weigh ${$user.weight} pounds. I am ${$user.gender} and I have been training for ${$user.years_trained} years. 
+      return `My name is ${$user.name} and I am ${$user.age} years old. I am ${$user.height} ${$user.height_unit} tall and I weigh ${$user.weight} ${$user.weight_unit}. I am ${$user.gender} and I have been training for ${$user.years_trained} years. 
       I am a ${$user.type} type of trainer and I prefer to work out ${$user.frequency} times a week. On these days: ${$user.days_cant_train.join(", ")} I can't train. I especially enjoy these exercises: ${$user.favorite_exercises.join(", ")}. 
       I prefer my workouts to be ${$user.preferred_workout_duration} minutes long and I ${$user.gym_or_home === 'gym' ? 'have access to a gym' : 'prefer to workout at home'}. 
       My fitness level is ${$user.fitness_level}. I have the following injuries: ${$user.injuries}. My fitness goal is ${$user.fitness_goal} and I aim to reach it in ${$user.target_timeframe}. 
