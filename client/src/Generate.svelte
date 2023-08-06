@@ -51,6 +51,7 @@
       }
 
       generatedText = data;
+      console.log(generatedText);
     } catch (e) {
       error = e.message;
     } finally {

@@ -6,17 +6,34 @@
   import Generate from "./Generate.svelte";
   import Login from "./Login.svelte";
   import Register from "./Register.svelte";
-  import { onMount } from 'svelte';
+  import { onMount } from "svelte";
+  import Particles from "svelte-particles";
+
+  let particlesConfig = {
+    fpsLimit: 120,
+    particles: {
+      color: {
+        value: "#000"
+      },
+      links: {
+        enable: true,
+        color: "#000"
+      },
+      move: {
+        enable: true
+      }
+    }
+  };
 
   let isAuth = false;
   let username = "";
 
-  import { auth } from './auth.js';
+  import { auth } from "./auth.js";
 
   let authState = {};
 
-  auth.subscribe(value => {
-      authState = value;
+  auth.subscribe((value) => {
+    authState = value;
   });
 
   const fetchAuthStatus = async () => {
@@ -37,36 +54,8 @@
   onMount(fetchAuthStatus);
 </script>
 
-<style>
-  /* Navbar styling */
-  .navbar {
-    display: flex;
-    justify-content: space-around;
-    padding: 15px 0;
-    background-color: #f5f5f5;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  }
 
-  /* Link styling */
-  .navbar a {
-    text-decoration: none;
-    color: #333;
-    font-size: 1.2em;
-    transition: color 0.2s ease;
-  }
-
-  /* Link hover styling */
-  .navbar a:hover {
-    color: #007BFF;
-  }
-
-  /* Current page link styling */
-  .navbar a[aria-current="true"] {
-    color: #007BFF;
-    font-weight: bold;
-  }
-</style>
-
+<Particles options={particlesConfig} />
 <Router>
   <nav class="navbar">
     <Link to="/">Home</Link>
@@ -90,3 +79,43 @@
   <Route path="/register" component={Register} />
 </Router>
 
+<style>
+  /* Navbar styling */
+  .navbar {
+    display: flex;
+    justify-content: space-around;
+    padding: 15px 0;
+    background-color: #f5f5f5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Link styling */
+  .navbar a {
+    text-decoration: none;
+    color: #333;
+    font-size: 1.2em;
+    transition: color 0.2s ease;
+  }
+
+  /* Link hover styling */
+  .navbar a:hover {
+    color: #007bff;
+  }
+
+  /* Current page link styling */
+  .navbar a[aria-current="true"] {
+    color: #007bff;
+    font-weight: bold;
+  }
+
+  :global(#tsparticles) {
+    margin: 0;
+    padding: 0;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    z-index: -9999;
+  }
+</style>

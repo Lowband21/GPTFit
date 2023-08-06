@@ -115,9 +115,51 @@ Additional instructions:
         db.session.add(new_generated_text)
         db.session.commit()
 
-        return jsonify(response_text)
+        return parse_workout_plan(response_text)
     except Exception as e:
         return jsonify(error=str(e)), 500
+
+import json
+
+def parse_workout_plan(response_text):
+    lines = response_text.split("\n")
+    workout_plan = {}
+    current_macrocycle = None
+    current_week = None
+    current_day = None
+    current_exercise = None
+    instructions_key = None
+    errors = []
+
+    for line in lines:
+        try:
+            if ": " in line:
+                key, value = [part.strip() for part in line.split(": ", 1)]
+                if "MACROCYCLE" in key:
+                    current_macrocycle = value
+                    workout_plan[current_macrocycle] = {}
+                elif key.startswith("Week"):
+                    current_week = value
+                    workout_plan[current_macrocycle][current_week] = {}
+                elif key.startswith("Day"):
+                    current_day = value
+                    workout_plan[current_macrocycle][current_week][current_day] = []
+                elif key.startswith("- Exercise"):
+                    current_exercise = {"Exercise": value}
+                    workout_plan[current_macrocycle][current_week][current_day].append(current_exercise)
+                elif key.startswith("- Sets") or key.startswith("- Reps") or key.startswith("- Weight"):
+                    current_exercise[key.strip("- ").capitalize()] = value
+                elif key in ["Participant Name", "Goal", "--- START DATE", "--- END DATE"]:
+                    instructions_key = key
+                    workout_plan[instructions_key] = value
+            elif instructions_key == "Additional instructions":
+                workout_plan[instructions_key] = workout_plan.get(instructions_key, "") + line.strip()
+        except Exception as e:
+            errors.append({"error": str(e), "line": line})
+            continue
+
+    json_workout_plan = json.dumps(workout_plan, indent=4)
+    return {"workout_plan": json_workout_plan, "errors": errors}
 
 @app.route('/response/<int:id>', methods=['DELETE'])
 @login_required
