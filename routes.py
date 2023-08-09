@@ -52,7 +52,7 @@ def generate():
         max_tokens = request.json.get('max_tokens', 1000)
 
         response = openai.ChatCompletion.create(
-          model="gpt-3.5-turbo-16k",  # replace with appropriate GPT-4 model when available
+          model="gpt-4",  # replace with appropriate GPT-4 model when available
           messages=[
             {"role": "system", "content": """You are an expert fitness program builder. You output programs in the following format: 
 === WORKOUT PLAN ===
