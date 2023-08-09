@@ -1256,6 +1256,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c80984affa11d98d1b88b66ac8853f143217b399d3c74116778ff8fdb4ed2e"
 
 [[package]]
+name = "gptfit"
+version = "0.1.0"
+dependencies = [
+ "actix-files",
+ "actix-identity",
+ "actix-rt",
+ "actix-session",
+ "actix-web",
+ "chrono",
+ "derive_more",
+ "diesel",
+ "dotenv",
+ "env_logger",
+ "lazy_static",
+ "once_cell",
+ "openai_api_rust",
+ "r2d2",
+ "rand 0.8.5",
+ "rust-argon2",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "sparkpost",
+ "sqlx",
+ "tokio 1.29.1",
+ "uuid",
+]
+
+[[package]]
 name = "groupable"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1745,34 +1774,6 @@ name = "log"
 version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b06a4cde4c0f271a446782e3eff8de789548ce57dbc8eca9292c27f4a42004b4"
-
-[[package]]
-name = "lowband_portfolio"
-version = "0.1.0"
-dependencies = [
- "actix-files",
- "actix-identity",
- "actix-rt",
- "actix-session",
- "actix-web",
- "chrono",
- "derive_more",
- "diesel",
- "dotenv",
- "env_logger",
- "lazy_static",
- "once_cell",
- "openai_api_rust",
- "r2d2",
- "rust-argon2",
- "serde",
- "serde_derive",
- "serde_json",
- "sparkpost",
- "sqlx",
- "tokio 1.29.1",
- "uuid",
-]
 
 [[package]]
 name = "matches"

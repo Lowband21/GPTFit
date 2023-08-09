@@ -1,5 +1,5 @@
 [package]
-name = "lowband_portfolio"
+name = "gptfit"
 version = "0.1.0"
 edition = "2021"
 
@@ -28,3 +28,4 @@ sparkpost = "0.5.4"
 sqlx = { version = "0.7.1", features = ["postgres", "runtime-tokio", "sqlite"]}
 tokio = { version = "1.29.1", features = ["full"]}
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
+rand = "0.8.5"

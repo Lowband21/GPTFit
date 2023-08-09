@@ -4,26 +4,29 @@ use serde::Deserialize;
 
 use crate::{
     errors::ServiceError,
-    models::{Invitation, Pool, SlimUser, User},
+    models::{Pool, NewUser, SlimUser, User},
     utils::hash_password,
 };
 
 // UserData is used to extract data from a post request by the client
 #[derive(Debug, Deserialize)]
 pub struct UserData {
+    pub username: String,
     pub password: String,
 }
 
 pub async fn register_user(
-    invitation_id: web::Path<String>,
     user_data: web::Json<UserData>,
     pool: web::Data<Pool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     println!("Here");
+    let user_data = user_data.into_inner();
+    let username = user_data.username;
+    let password = user_data.password;
     let user = web::block(move || {
         query(
-            invitation_id.into_inner(),
-            user_data.into_inner().password,
+            username,
+            password,
             pool,
         )
     })
@@ -33,37 +36,49 @@ pub async fn register_user(
 }
 
 fn query(
-    invitation_id: String,
+    username: String,
     password: String,
     pool: web::Data<Pool>,
 ) -> Result<SlimUser, crate::errors::ServiceError> {
-    use crate::schema::{invitations::dsl::*, users::dsl::*};
+    use crate::schema::users::dsl::*;
 
     let mut conn = pool.get().unwrap();
 
-    let invitation_id = uuid::Uuid::parse_str(&invitation_id)?;
+    match users.filter(email.eq(&username)).load::<User>(&mut conn) {
+        Ok(mut result) => {
+            if let Some(user) = result.pop() {
+                let password_hash: String = hash_password(&password)?;
+                dbg!(&password_hash);
 
-    invitations
-        .filter(id.eq(invitation_id))
-        .load::<Invitation>(&mut conn)
-        .map_err(|_db_error| ServiceError::BadRequest("Invalid Invitation".into()))
-        .and_then(|mut result| {
-            if let Some(invitation) = result.pop() {
-                // if invitation is not expired
-                if invitation.expires_at > chrono::Local::now().naive_local() {
-                    // try hashing the password, else return the error that will be converted to ServiceError
-                    let password: String = hash_password(&password)?;
-                    dbg!(&password);
-
-                    let user = User::from_details(invitation.email, password);
-                    let inserted_user: User = diesel::insert_into(users)
-                        .values(&user)
-                        .get_result(&mut conn)?;
-                    dbg!(&inserted_user);
-
-                    return Ok(inserted_user.into());
+                if user.hash == password_hash {
+                    return Ok(user.into());
+                } else {
+                    Err(ServiceError::BadRequest("Invalid Password".into()))
                 }
+            } else {
+                // If no user was found, create a new one
+                let new_user = NewUser { 
+                    email: username, 
+                    hash: hash_password(&password)?,
+                    created_at: chrono::Local::now().naive_local()
+                };
+
+                diesel::insert_into(users).values(&new_user).execute(&mut conn)
+                    .map_err(|err| {
+                        eprintln!("Error during user insertion: {:?}", err);
+                        ServiceError::InternalServerError
+                    })?;
+                
+                users.order(email.desc()).first::<User>(&mut conn).map(Into::into)
+                    .map_err(|err| {
+                        eprintln!("Error fetching the newly created user: {:?}", err);
+                        ServiceError::InternalServerError
+                    })
             }
-            Err(ServiceError::BadRequest("Invalid Invitation".into()))
-        })
+        }
+        Err(db_error) => {
+            eprintln!("DB Error: {:?}", db_error); // or use any logger you have in place
+            Err(ServiceError::BadRequest("Error fetching user".into()))
+        }
+    }
 }

@@ -11,21 +11,21 @@
 
   let particlesConfig = {
     fpsLimit: 120,
-        particles: {
-            color: {
-                value: "#000",
-            },
-            links: {
-                enable: true,
-                color: "#000",
-            },
-            move: {
-                enable: true,
-            },
-            number: {
-                value: 100,
-            },
-        },
+    particles: {
+      color: {
+        value: "#000",
+      },
+      links: {
+        enable: true,
+        color: "#000",
+      },
+      move: {
+        enable: true,
+      },
+      number: {
+        value: 100,
+      },
+    },
   };
 
   let isAuth = false;
@@ -40,10 +40,21 @@
   });
 
   const fetchAuthStatus = async () => {
-    const response = await fetch("./auth_status");
-    const { is_authenticated, email } = await response.json();
-    isAuth = is_authenticated;
-    username = email || "";
+    try {
+      const response = await fetch("./api/auth"); // Updated to the get_me endpoint
+      if (response.ok) {
+        const user = await response.json();
+        isAuth = true; // The user is authenticated if the request was successful
+        username = user.email;
+      } else {
+        isAuth = false;
+        username = "";
+      }
+    } catch (error) {
+      console.error("Error fetching authentication status:", error);
+      isAuth = false;
+      username = "";
+    }
   };
 
   const logout = async () => {
@@ -56,7 +67,6 @@
 
   onMount(fetchAuthStatus);
 </script>
-
 
 <Particles options={particlesConfig} />
 <Router>

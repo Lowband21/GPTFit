@@ -26,26 +26,12 @@ impl User {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Queryable, Insertable)]
-#[diesel(table_name = invitations)]
-pub struct Invitation {
-    pub id: uuid::Uuid,
+#[derive(Insertable)]
+#[table_name = "users"]
+pub struct NewUser {
     pub email: String,
-    pub expires_at: chrono::NaiveDateTime,
-}
-
-// any type that implements Into<String> can be used to create Invitation
-impl<T> From<T> for Invitation
-where
-    T: Into<String>,
-{
-    fn from(email: T) -> Self {
-        Invitation {
-            id: uuid::Uuid::new_v4(),
-            email: email.into(),
-            expires_at: chrono::Local::now().naive_local() + chrono::Duration::hours(24),
-        }
-    }
+    pub hash: String,
+    pub created_at: chrono::NaiveDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

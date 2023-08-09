@@ -14,21 +14,15 @@ mod routes;
 mod schema;
 mod utils;
 mod errors;
-mod invitation_handler;
-mod email_service;
 mod auth_handler;
 mod register_handler;
 
 use crate::routes::*;
 
-#[macro_use]
-extern crate lazy_static;
-
 type DbPool = Pool<ConnectionManager<PgConnection>>;
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
-    println!("Here");
     dotenv().ok();
 
     std::env::set_var("RUST_LOG", "actix_web=info");
@@ -42,9 +36,9 @@ async fn main() -> std::io::Result<()> {
         .expect("Failed to create pool.");
 
 
-    let redis_connection_string = std::env::var("REDIS_URL").unwrap_or_else(|_| String::from("127.0.0.1:6379"));
+    let redis_connection_string = std::env::var("REDIS_URL").unwrap_or_else(|_| String::from("redis://127.0.0.1:6379"));
     let secret_key = Key::generate();
-    let redis_store = RedisSessionStore::new("redis://127.0.0.1:6379")
+    let redis_store = RedisSessionStore::new(redis_connection_string)
         .await
         .unwrap();
 
@@ -57,13 +51,11 @@ async fn main() -> std::io::Result<()> {
                  secret_key.clone()
             ))
             .app_data(web::Data::new(pool.clone()))
-            .configure(routes::init_routes)
-            .service(actix_files::Files::new("/", "./client/public").index_file("index.html"))
             .service(
                 web::scope("/api")
                     .service(
-                        web::resource("/invitation")
-                            .route(web::post().to(invitation_handler::post_invitation)),
+                        web::resource("/csrf_token")
+                            .route(web::get().to(auth_handler::get_csrf_token)),
                     )
                     .service(
                         web::resource("/register_user")
@@ -74,13 +66,15 @@ async fn main() -> std::io::Result<()> {
                             .route(web::post().to(auth_handler::login))
                             .route(web::delete().to(auth_handler::logout))
                             .route(web::get().to(auth_handler::get_me)),
-                    ),
+                    )
                 )
+            .service(actix_files::Files::new("/", "./client/public").index_file("index.html"))
             .default_service(
                 web::route().to(move |req: HttpRequest| {
                     let path = req.path().to_owned();
                     async move {
                         if path.starts_with("/api") {
+                            println!("Matching /api as webpage");
                             HttpResponse::NotFound().finish()
                         } else {
                             match actix_files::NamedFile::open("./client/public/index.html") {
