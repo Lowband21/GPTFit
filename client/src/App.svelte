@@ -11,18 +11,21 @@
 
   let particlesConfig = {
     fpsLimit: 120,
-    particles: {
-      color: {
-        value: "#000"
-      },
-      links: {
-        enable: true,
-        color: "#000"
-      },
-      move: {
-        enable: true
-      }
-    }
+        particles: {
+            color: {
+                value: "#000",
+            },
+            links: {
+                enable: true,
+                color: "#000",
+            },
+            move: {
+                enable: true,
+            },
+            number: {
+                value: 100,
+            },
+        },
   };
 
   let isAuth = false;
