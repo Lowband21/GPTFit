@@ -115,7 +115,7 @@ Additional instructions:
         db.session.add(new_generated_text)
         db.session.commit()
 
-        return parse_workout_plan(response_text)
+        return jsonify(response_text)
     except Exception as e:
         return jsonify(error=str(e)), 500
 
