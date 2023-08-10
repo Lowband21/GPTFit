@@ -12,7 +12,7 @@
     "rollup-plugin-terser": "^7.0.2",
     "sirv-cli": "^0.4.4",
     "svelte": "^3.0.0",
-    "svelte-particles": "1.0.0",
+    "svelte-particles": "1.9.0",
     "svelte-routing": "^2.0.0",
     "tsparticles-engine": "^2.11.1",
     "tsparticles-slim": "^2.11.1",

@@ -6,23 +6,15 @@
 
     onMount(async () => {
         try {
-            const response = await fetch('./profile', {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-                }
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(`Error: ${data.error}`);
-            }
-            
-            const user = await response.json();
-            name = user.name;
-        } catch (err) {
-            error = err.message || "An error occurred.";
+            const response = await fetch("./api/auth"); // Updated to the get_me endpoint
+            if (response.ok) {
+                const user = await response.json();
+                name = user.email;
+            } 
+        } catch (error) {
+          console.error("Error fetching authentication status:", error);
+          isAuth = false;
+          username = "";
         }
     });
 </script>

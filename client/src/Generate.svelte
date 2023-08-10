@@ -9,6 +9,8 @@
     favorite_exercises: [],
   });
 
+  let email = "";
+  let isAuth = false;
   let generatedText = '';
   let isLoading = false; 
   let error = null; 
@@ -32,7 +34,7 @@
     error = null;
 
     try {
-      const response = await fetch("./generate", {
+      const response = await fetch("./api/generate", {
           method: 'POST',
           headers: {
               'Content-Type': 'application/json',
@@ -59,8 +61,25 @@
     }
   }
 
-  onMount(async () => {
-    const response = await fetch('./profile', {
+  const fetchAuthStatus = async () => {
+      try {
+          const response = await fetch("./api/auth"); // Updated to the get_me endpoint
+          if (response.ok) {
+              const user = await response.json();
+              isAuth = true; // The user is authenticated if the request was successful
+              email = user.email;
+          } else {
+              isAuth = false;
+              email = "";
+          }
+      } catch (error) {
+        console.error("Error fetching authentication status:", error);
+        isAuth = false;
+        username = "";
+      }
+  }
+  async function loadProfile() {
+    const response = await fetch(`./api/profile/${email}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -70,17 +89,22 @@
   
     if (response.ok) {
       const userProfile = await response.json();
-      console.log('userProfile:', userProfile); // Add this line
+      console.log('userProfile:', userProfile.data); // Add this line
       console.log('current user:', get(user)); // Add this line
   
       if (userProfile && get(user)) { // Check if both userProfile and get(user) are not undefined
-        user.set({ ...get(user), ...userProfile });
+        user.set({ ...get(user), ...userProfile.data });
       } else {
         error = "Failed to load user profile."
       }
     } else {
       error = "Failed to load user profile."
     }
+  }
+
+  onMount(async () => {
+    await fetchAuthStatus();
+    await loadProfile();
   });
 </script>
 

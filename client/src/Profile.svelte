@@ -1,6 +1,7 @@
 <script>
     import { onMount, tick } from 'svelte';
-
+    let email = "";
+    let isAuth = false;
     let user = {
         name: '',
         age: '',
@@ -10,7 +11,6 @@
         weight: '',
         gender: '',
         years_trained: '',
-        type: '',
         fitness_level: '',
         injuries: '',
         fitness_goal: '',
@@ -36,30 +36,57 @@
     const heightUnits = ['cm', 'ft'];
     const weightUnits = ['kg', 'lbs'];
 
-    onMount(async () => {
-        const response = await fetch('./profile', {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+    const fetchAuthStatus = async () => {
+        try {
+            const response = await fetch("./api/auth"); // Updated to the get_me endpoint
+            if (response.ok) {
+                const user = await response.json();
+                isAuth = true; // The user is authenticated if the request was successful
+                email = user.email;
+            } else {
+                isAuth = false;
+                email = "";
             }
-        });
-
-        if (response.ok) {
+        } catch (error) {
+          console.error("Error fetching authentication status:", error);
+          isAuth = false;
+          username = "";
+        }
+    }
+    onMount(async () => {
+        await fetchAuthStatus();
+        await loadProfile();
+    });
+    async function loadProfile() {
+        try {
+            const response = await fetch(`./api/profile/${email}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                }
+            });
+    
+            if (!response.ok) {
+                throw new Error(await response.text()); // get and throw the error message
+            }
+    
             const userProfile = await response.json();
             await tick();
-            user = { ...user, ...userProfile }; 
-            if (Object.keys(userProfile).length) {  
-                profileExists = true;
-            }
-        } else {
-            error = await response.text(); // get error message
+    
+            console.log(userProfile);
+            
+            user = { ...user, ...userProfile.data }; // spread the data from userProfile into user object
+            profileExists = userProfile.data && Object.keys(userProfile.data).length > 0; // check if the profile exists based on data
+    
+        } catch (err) {
+            error = err.message; // set the error message
             console.error(error); // print error message to console
         }
-    });
+    }
 
     async function saveProfile() {
-        const response = await fetch('./profile', {
+        const response = await fetch(`./api/profile/${email}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
