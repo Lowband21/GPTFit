@@ -1,6 +1,7 @@
 use actix_web::{web, HttpResponse};
 use diesel::prelude::*;
 use serde::Deserialize;
+use uuid::Uuid;
 
 use crate::{
     errors::ServiceError,
@@ -58,6 +59,7 @@ fn query(
             } else {
                 // If no user was found, create a new one
                 let new_user = NewUser { 
+                    user_id: Uuid::new_v4().to_u128_le() as i32,     
                     email: username, 
                     hash: hash_password(&password)?,
                     created_at: chrono::Local::now().naive_local()

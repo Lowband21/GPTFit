@@ -58,7 +58,7 @@
   };
 
   const logout = async () => {
-    const response = await fetch("./logout", { method: "POST" });
+    const response = await fetch("./api/auth", { method: "DELETE" });
     if (response.ok) {
       isAuth = false;
       username = "";

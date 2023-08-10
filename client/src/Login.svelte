@@ -7,8 +7,6 @@
         console.log(response);
     
         if (response.ok) {
-            const textData = await response.text();
-            console.log("Response text:", textData);
             const data = await response.json();
             console.log("Got back CsrfToken:", data.csrfToken);
             return data.csrfToken;
@@ -37,19 +35,19 @@
             body: JSON.stringify({ email, password, csrfToken }),
             credentials: "include",
         });
-        console.log(response);
+        //console.log(response);
+        //console.log(await response.text())
 
         attemptedLogin = true;
         if (response.ok) {
-            const data = await response.json();
-            console.log(data);
+            //const data = await response.json();
+            //console.log(data);
             auth.set({ isAuth: true, username: email });
             loggedIn = true;
             successMessage = "Logged in successfully!";
-            localStorage.setItem("auth_token", data.auth_token);
         }
 
-        const data = await response.json();
+        const data = await response.text();
         console.log(data);
         auth.set({ isAuth: true, username: email });
         loggedIn = true;

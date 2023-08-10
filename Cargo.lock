@@ -914,6 +914,7 @@ dependencies = [
  "libsqlite3-sys",
  "pq-sys",
  "r2d2",
+ "serde_json",
  "time 0.3.25",
  "uuid",
 ]
@@ -1270,6 +1271,7 @@ dependencies = [
  "dotenv",
  "env_logger",
  "lazy_static",
+ "log 0.4.19",
  "once_cell",
  "openai_api_rust",
  "r2d2",

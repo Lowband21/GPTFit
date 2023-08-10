@@ -4,7 +4,7 @@
     let responses = [];
 
     async function deleteResponse(id) {
-        const res = await fetch(`/response/${id}`, {
+        const res = await fetch(`api/response/${id}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
@@ -19,7 +19,7 @@
     }
 
     onMount(async () => {
-        const res = await fetch('/responses', {
+        const res = await fetch('api/responses', {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
             }

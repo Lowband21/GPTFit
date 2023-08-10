@@ -14,7 +14,7 @@ actix-web = "4.3.1"
 rust-argon2 = "1"
 chrono = "0.4.26"
 derive_more = "0.99.17"
-diesel = { version = "2.1.0", features = ["postgres", "sqlite", "r2d2", "uuid", "chrono"]}
+diesel = { version = "2.1.0", features = ["postgres", "sqlite", "r2d2", "uuid", "chrono", "serde_json"]}
 dotenv = "0.15.0"
 env_logger = "0.10.0"
 lazy_static = "1.4.0"
@@ -29,3 +29,4 @@ sqlx = { version = "0.7.1", features = ["postgres", "runtime-tokio", "sqlite"]}
 tokio = { version = "1.29.1", features = ["full"]}
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 rand = "0.8.5"
+log = "0.4.19"

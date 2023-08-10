@@ -16,6 +16,7 @@ mod utils;
 mod errors;
 mod auth_handler;
 mod register_handler;
+mod gen_handlers;
 
 use crate::routes::*;
 
@@ -54,12 +55,29 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api")
                     .service(
+                        web::resource("/profile/{user_email}")
+                            .route(web::post().to(gen_handlers::save_user_profile))
+                            .route(web::get().to(gen_handlers::get_user_profile)),
+                    )
+                    .service(
+                        web::resource("/response/{id}")
+                            .route(web::delete().to(gen_handlers::delete_response))
+                    )
+                    .service(
+                        web::resource("/responses")
+                            .route(web::get().to(gen_handlers::get_responses))
+                    )
+                    .service(
                         web::resource("/csrf_token")
                             .route(web::get().to(auth_handler::get_csrf_token)),
                     )
                     .service(
                         web::resource("/register_user")
                             .route(web::post().to(register_handler::register_user)),
+                    )
+                    .service(
+                        web::resource("/generate")
+                            .route(web::post().to(gen_handlers::generate)),
                     )
                     .service(
                         web::resource("/auth")
@@ -77,6 +95,7 @@ async fn main() -> std::io::Result<()> {
                             println!("Matching /api as webpage");
                             HttpResponse::NotFound().finish()
                         } else {
+                            println!("Matching file");
                             match actix_files::NamedFile::open("./client/public/index.html") {
                                 Ok(file) => file.into_response(&req),
                                 Err(_) => HttpResponse::InternalServerError().finish(),
