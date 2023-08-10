@@ -17,7 +17,7 @@ use crate::{
 pub struct AuthData {
     pub email: String,
     pub password: String,
-    pub csrfToken: String,
+    pub csrf_token: String,
 }
 
 // we need the same data
@@ -50,12 +50,13 @@ pub async fn login(
     req: HttpRequest,
     auth_data: web::Json<AuthData>,
     pool: web::Data<Pool>,
+    session: Session,
 ) -> Result<HttpResponse, actix_web::Error> {
     // Validate the CSRF token first
-    if !validate_csrf_token(&auth_data.csrfToken) {
+    if !validate_csrf_token(&session, &auth_data.csrf_token) {
         return Err(actix_web::error::ErrorUnauthorized("Invalid CSRF Token"));
     }
-    
+
     let user = web::block(move || query(auth_data.into_inner(), pool)).await??;
 
     let user_string = serde_json::to_string(&user).unwrap();
@@ -64,10 +65,11 @@ pub async fn login(
     Ok(HttpResponse::Ok().finish())
 }
 
-// Placeholder function for CSRF token validation
-fn validate_csrf_token(token: &str) -> bool {
-    // Implement your actual CSRF token validation logic here
-    true // Return true if the token is valid, false otherwise
+fn validate_csrf_token(session: &Session, token: &str) -> bool {
+    match session.get::<String>("csrf_token") {
+        Ok(Some(stored_token)) => token == stored_token,
+        _ => false,
+    }
 }
 
 pub async fn get_me(logged_user: LoggedUser) -> HttpResponse {
@@ -92,13 +94,13 @@ fn query(auth_data: AuthData, pool: web::Data<Pool>) -> Result<SlimUser, Service
             }
         }
     }
-    
+
     Err(ServiceError::Unauthorized)
 }
 
 use actix_session::Session;
-use uuid::Uuid;
 use serde_json::json;
+use uuid::Uuid;
 
 pub async fn get_csrf_token(session: Session) -> Result<HttpResponse, actix_web::Error> {
     // Generate a new UUID token

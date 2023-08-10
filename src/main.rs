@@ -1,24 +1,21 @@
-use actix_web::{web, App, HttpServer, HttpResponse, HttpRequest};
+use actix_web::middleware::Logger;
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::PgConnection;
-use std::env;
 use dotenv::dotenv;
-use actix_web::middleware::Logger;
+use std::env;
 
-use actix_web::cookie::Key;
 use actix_identity::IdentityMiddleware;
-use actix_session::{Session, SessionMiddleware, storage::RedisSessionStore};
+use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+use actix_web::cookie::Key;
 
+mod auth_handler;
+mod errors;
+mod gen_handlers;
 mod models;
-mod routes;
+mod register_handler;
 mod schema;
 mod utils;
-mod errors;
-mod auth_handler;
-mod register_handler;
-mod gen_handlers;
-
-use crate::routes::*;
 
 type DbPool = Pool<ConnectionManager<PgConnection>>;
 
@@ -36,8 +33,8 @@ async fn main() -> std::io::Result<()> {
         .build(manager)
         .expect("Failed to create pool.");
 
-
-    let redis_connection_string = std::env::var("REDIS_URL").unwrap_or_else(|_| String::from("redis://127.0.0.1:6379"));
+    let redis_connection_string =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| String::from("redis://127.0.0.1:6379"));
     let secret_key = Key::generate();
     let redis_store = RedisSessionStore::new(redis_connection_string)
         .await
@@ -48,8 +45,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .wrap(IdentityMiddleware::default())
             .wrap(SessionMiddleware::new(
-                 redis_store.clone(),
-                 secret_key.clone()
+                redis_store.clone(),
+                secret_key.clone(),
             ))
             .app_data(web::Data::new(pool.clone()))
             .service(
@@ -61,11 +58,11 @@ async fn main() -> std::io::Result<()> {
                     )
                     .service(
                         web::resource("/response/{id}")
-                            .route(web::delete().to(gen_handlers::delete_response))
+                            .route(web::delete().to(gen_handlers::delete_response)),
                     )
                     .service(
                         web::resource("/responses")
-                            .route(web::get().to(gen_handlers::get_responses))
+                            .route(web::get().to(gen_handlers::get_responses)),
                     )
                     .service(
                         web::resource("/csrf_token")
@@ -76,36 +73,36 @@ async fn main() -> std::io::Result<()> {
                             .route(web::post().to(register_handler::register_user)),
                     )
                     .service(
-                        web::resource("/generate")
-                            .route(web::post().to(gen_handlers::generate)),
+                        web::resource("/generate").route(web::post().to(gen_handlers::generate)),
                     )
                     .service(
                         web::resource("/auth")
                             .route(web::post().to(auth_handler::login))
                             .route(web::delete().to(auth_handler::logout))
                             .route(web::get().to(auth_handler::get_me)),
-                    )
-                )
+                    ),
+            )
             .service(actix_files::Files::new("/", "./client/public").index_file("index.html"))
-            .default_service(
-                web::route().to(move |req: HttpRequest| {
-                    let path = req.path().to_owned();
-                    async move {
-                        if path.starts_with("/api") {
-                            println!("Matching /api as webpage");
-                            HttpResponse::NotFound().finish()
-                        } else {
-                            println!("Matching file");
-                            match actix_files::NamedFile::open("./client/public/index.html") {
-                                Ok(file) => file.into_response(&req),
-                                Err(_) => HttpResponse::InternalServerError().finish(),
-                            }
+            .default_service(web::route().to(move |req: HttpRequest| {
+                let path = req.path().to_owned();
+                async move {
+                    if path.starts_with("/api") {
+                        println!("Matching /api as webpage");
+                        HttpResponse::NotFound().finish()
+                    } else {
+                        println!("Matching file");
+                        match actix_files::NamedFile::open("./client/public/index.html") {
+                            Ok(file) => file.into_response(&req),
+                            Err(_) => HttpResponse::InternalServerError().finish(),
                         }
                     }
-                })
-            )
+                }
+            }))
     })
-    .bind(format!("0.0.0.0:{}", env::var("PORT").unwrap_or_else(|_| "5000".to_string())))?
+    .bind(format!(
+        "0.0.0.0:{}",
+        env::var("PORT").unwrap_or_else(|_| "5000".to_string())
+    ))?
     .run()
     .await
 }

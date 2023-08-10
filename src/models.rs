@@ -1,8 +1,7 @@
 #![allow(clippy::extra_unused_lifetimes)]
 
-use diesel::{r2d2::ConnectionManager, PgConnection, Queryable, Insertable, sql_types::{Json, Jsonb}};
+use diesel::{r2d2::ConnectionManager, Insertable, PgConnection, Queryable};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 use super::schema::*;
@@ -11,7 +10,7 @@ use super::schema::*;
 pub type Pool = r2d2::Pool<ConnectionManager<PgConnection>>;
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Insertable)]
-#[table_name = "fitness_profile"]
+#[diesel(table_name = fitness_profile)]
 pub struct NewUserProfile {
     pub user_id: Option<i32>,
     pub name: String,
@@ -57,7 +56,7 @@ impl User {
 }
 
 #[derive(Insertable)]
-#[table_name = "users"]
+#[diesel(table_name = users)]
 pub struct NewUser {
     pub user_id: i32,
     pub email: String,
@@ -76,7 +75,7 @@ impl From<User> for SlimUser {
     }
 }
 #[derive(Insertable)]
-#[table_name = "generated_text"]
+#[diesel(table_name = generated_text)]
 pub struct NewGeneratedText {
     pub prompt: String,
     pub response: String,
