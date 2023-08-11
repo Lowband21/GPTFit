@@ -1,20 +1,20 @@
-use std::future::{ready, Ready};
 
-use actix_identity::Identity;
 use actix_web::{
-    dev::Payload, web, Error, FromRequest, HttpMessage as _, HttpRequest, HttpResponse, Error as ActixError
+    web, Error as ActixError,
+    HttpResponse,
 };
 use diesel::prelude::*;
 use serde::Deserialize;
 use serde_derive::Serialize;
 
+use super::schema::*;
 use crate::{
     errors::ServiceError,
-    models::{Pool, SlimUser, User, NewUserProfile, FitnessProfile, NewGeneratedText},
-    utils::verify, DbPool, schema::fitness_profile::all_columns,
+    models::{FitnessProfile, NewGeneratedText, NewUserProfile, User},
+    schema::fitness_profile::all_columns,
+    utils::verify,
+    DbPool,
 };
-use super::schema::*;
-
 
 #[derive(Serialize)]
 struct ApiResponse<T> {
@@ -22,23 +22,28 @@ struct ApiResponse<T> {
     error: Option<String>,
 }
 
+use crate::schema::{fitness_profile, users};
 use diesel::prelude::*;
-use crate::schema::{users, fitness_profile};
 
-
-
-pub async fn get_user_profile(pool: web::Data<DbPool>, user_email: web::Path<String>) -> HttpResponse {
+pub async fn get_user_profile(
+    pool: web::Data<DbPool>,
+    user_email: web::Path<String>,
+) -> HttpResponse {
     let mut conn = match pool.get() {
         Ok(connection) => connection,
-        Err(_) => return HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
-            data: None,
-            error: Some("Failed to get database connection".to_string())
-        })
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
+                data: None,
+                error: Some("Failed to get database connection".to_string()),
+            })
+        }
     };
-    
+
     log::info!("Executing user profile query for email: {}", user_email);
     let user_profile = users::table
-        .inner_join(fitness_profile::table.on(users::user_id.nullable().eq(fitness_profile::user_id)))
+        .inner_join(
+            fitness_profile::table.on(users::user_id.nullable().eq(fitness_profile::user_id)),
+        )
         .filter(users::email.eq(&user_email.into_inner()))
         .select(all_columns)
         .first::<FitnessProfile>(&mut conn);
@@ -46,37 +51,41 @@ pub async fn get_user_profile(pool: web::Data<DbPool>, user_email: web::Path<Str
     match user_profile {
         Ok(profile) => HttpResponse::Ok().json(ApiResponse {
             data: Some(profile),
-            error: None
+            error: None,
         }),
         Err(err) => {
             log::error!("Failed to fetch user profile. Detailed error: {:?}", err);
             HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
                 data: None,
-                error: Some(format!("An error occurred: {}", err))
+                error: Some(format!("An error occurred: {}", err)),
             })
         }
     }
 }
 
-pub async fn save_user_profile(profile: web::Json<NewUserProfile>, pool: web::Data<DbPool>, user_email: web::Path<String>) -> HttpResponse {
+pub async fn save_user_profile(
+    profile: web::Json<NewUserProfile>,
+    pool: web::Data<DbPool>,
+    user_email: web::Path<String>,
+) -> HttpResponse {
     let mut conn = pool.get().unwrap();
-    
+
     let user = users::table
         .filter(users::email.eq(user_email.into_inner()))
         .first::<User>(&mut *conn);
-    
+
     if let Err(err) = user {
         return HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
             data: None,
-            error: Some(format!("User not found: {}", err))
+            error: Some(format!("User not found: {}", err)),
         });
     }
-    
+
     let user_id = user.unwrap().user_id;
 
     let new_profile = FitnessProfile {
         id: user_id,
-        user_id: Some(user_id), 
+        user_id: Some(user_id),
         name: profile.name.clone(),
         age: profile.age,
         height: profile.height,
@@ -101,17 +110,16 @@ pub async fn save_user_profile(profile: web::Json<NewUserProfile>, pool: web::Da
 
     match diesel::insert_into(fitness_profile::table)
         .values(&new_profile)
-        .execute(&mut *conn) {
+        .execute(&mut *conn)
+    {
         Ok(_) => HttpResponse::Ok().json(ApiResponse {
             data: Some(new_profile),
-            error: None
+            error: None,
         }),
-        Err(err) => {
-            HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
-                data: None,
-                error: Some(format!("An error occurred: {}", err))
-            })
-        }
+        Err(err) => HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
+            data: None,
+            error: Some(format!("An error occurred: {}", err)),
+        }),
     }
 }
 
@@ -125,7 +133,7 @@ pub struct Prompt {
 
 pub async fn generate(
     pool: web::Data<DbPool>,
-    msg: web::Json<Prompt>, 
+    msg: web::Json<Prompt>,
 ) -> Result<HttpResponse, ActixError> {
     println!("In Chat with message: {:?}", msg);
 
@@ -144,7 +152,7 @@ pub async fn generate(
         content: "You are an expert fitness program builder.".to_string(),
     };
     messages_for_api.push(sys_message);
-    
+
     // Add the user message, which will be constant throughout all iterations
     messages_for_api.push(Message {
         role: Role::User,
@@ -166,7 +174,8 @@ pub async fn generate(
                 ...
                 Day 7:
                 ...
-                ", week_num, week_num
+                ",
+                week_num, week_num
             ),
         });
 
@@ -187,12 +196,21 @@ pub async fn generate(
 
         match openai.chat_completion_create(&body) {
             Ok(response) => {
-                let message = response.choices.get(0)
+                let message = response
+                    .choices
+                    .get(0)
                     .and_then(|choice| choice.message.as_ref())
                     .ok_or_else(|| {
-                        eprintln!("Unexpected response format from OpenAI for week {}", week_num);
-                        HttpResponse::InternalServerError().json(format!("Unexpected response from OpenAI for week {}", week_num))
-                    }).unwrap();
+                        eprintln!(
+                            "Unexpected response format from OpenAI for week {}",
+                            week_num
+                        );
+                        HttpResponse::InternalServerError().json(format!(
+                            "Unexpected response from OpenAI for week {}",
+                            week_num
+                        ))
+                    })
+                    .unwrap();
 
                 println!("Week {}: {:?}", week_num, message);
 
@@ -208,7 +226,10 @@ pub async fn generate(
             }
             Err(e) => {
                 eprintln!("Error for week {}: {:?}", week_num, e);
-                return Ok(HttpResponse::InternalServerError().json(format!("Failed to communicate with OpenAI for week {}", week_num)));
+                return Ok(HttpResponse::InternalServerError().json(format!(
+                    "Failed to communicate with OpenAI for week {}",
+                    week_num
+                )));
             }
         }
     }
@@ -220,8 +241,10 @@ pub async fn generate(
         user_id: None,
     };
 
-    let mut conn = pool.get()
-        .map_err(|_| HttpResponse::InternalServerError().json("Failed to obtain DB connection")).unwrap();
+    let mut conn = pool
+        .get()
+        .map_err(|_| HttpResponse::InternalServerError().json("Failed to obtain DB connection"))
+        .unwrap();
 
     diesel::insert_into(generated_text::table)
         .values(&new_entry)
@@ -229,7 +252,8 @@ pub async fn generate(
         .map_err(|e| {
             eprintln!("Error saving generated text: {:?}", e);
             HttpResponse::InternalServerError().json("Failed to save generated text")
-        }).unwrap();
+        })
+        .unwrap();
 
     Ok(HttpResponse::Ok().json(complete_response))
 }
@@ -262,11 +286,13 @@ pub async fn get_responses(pool: web::Data<DbPool>) -> Result<HttpResponse, Acti
 }
 
 // Delete a specific response
-pub async fn delete_response(path: web::Path<Info>, pool: web::Data<DbPool>) -> Result<HttpResponse, ActixError> {
+pub async fn delete_response(
+    path: web::Path<Info>,
+    pool: web::Data<DbPool>,
+) -> Result<HttpResponse, ActixError> {
     let mut conn = pool.get().unwrap();
 
-    let count = diesel::delete(generated_text::table.find(path.id))
-        .execute(&mut *conn);
+    let count = diesel::delete(generated_text::table.find(path.id)).execute(&mut *conn);
 
     match count {
         Ok(_) => Ok(HttpResponse::Ok().finish()),

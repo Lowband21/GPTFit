@@ -32,7 +32,7 @@
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({ email, password, csrfToken }),
+            body: JSON.stringify({ email, password }),
             credentials: "include",
         });
         //console.log(response);

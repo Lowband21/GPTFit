@@ -48,8 +48,4 @@ diesel::table! {
 diesel::joinable!(fitness_profile -> users (user_id));
 diesel::joinable!(generated_text -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(
-    fitness_profile,
-    generated_text,
-    users,
-);
+diesel::allow_tables_to_appear_in_same_query!(fitness_profile, generated_text, users,);

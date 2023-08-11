@@ -1,6 +1,10 @@
 #![allow(clippy::extra_unused_lifetimes)]
 
-use diesel::{r2d2::ConnectionManager, PgConnection, Queryable, Insertable, sql_types::{Json, Jsonb}};
+use diesel::{
+    r2d2::ConnectionManager,
+    sql_types::{Json, Jsonb},
+    Insertable, PgConnection, Queryable,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;

@@ -1,18 +1,20 @@
-use actix_web::{HttpResponse, web, Responder, Error as ActixError, HttpRequest, post, HttpMessage};
+use actix_web::{
+    post, web, Error as ActixError, HttpMessage, HttpRequest, HttpResponse, Responder,
+};
 
 use crate::DbPool;
 
 use actix_web::Error;
 
-use openai_api_rust::*;
-use openai_api_rust::chat::*;
+use actix_identity::Identity;
 use actix_web::http::StatusCode;
-use actix_web::{App, HttpServer, middleware};
-use actix_identity::{Identity};
-use sqlx::PgPool;
-use serde::{Deserialize, Serialize};
-use openai_api_rust::*;
+use actix_web::{middleware, App, HttpServer};
 use openai_api_rust::chat::*;
+use openai_api_rust::chat::*;
+use openai_api_rust::*;
+use openai_api_rust::*;
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 
 use crate::{
     errors::ServiceError,

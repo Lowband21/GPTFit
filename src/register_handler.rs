@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::ServiceError,
-    models::{Pool, NewUser, SlimUser, User},
+    models::{NewUser, Pool, SlimUser, User},
     utils::hash_password,
 };
 
@@ -24,14 +24,7 @@ pub async fn register_user(
     let user_data = user_data.into_inner();
     let username = user_data.username;
     let password = user_data.password;
-    let user = web::block(move || {
-        query(
-            username,
-            password,
-            pool,
-        )
-    })
-    .await??;
+    let user = web::block(move || query(username, password, pool)).await??;
 
     Ok(HttpResponse::Ok().json(&user))
 }
@@ -58,20 +51,25 @@ fn query(
                 }
             } else {
                 // If no user was found, create a new one
-                let new_user = NewUser { 
-                    user_id: Uuid::new_v4().to_u128_le() as i32,     
-                    email: username, 
+                let new_user = NewUser {
+                    user_id: Uuid::new_v4().to_u128_le() as i32,
+                    email: username,
                     hash: hash_password(&password)?,
-                    created_at: chrono::Local::now().naive_local()
+                    created_at: chrono::Local::now().naive_local(),
                 };
 
-                diesel::insert_into(users).values(&new_user).execute(&mut conn)
+                diesel::insert_into(users)
+                    .values(&new_user)
+                    .execute(&mut conn)
                     .map_err(|err| {
                         eprintln!("Error during user insertion: {:?}", err);
                         ServiceError::InternalServerError
                     })?;
-                
-                users.order(email.desc()).first::<User>(&mut conn).map(Into::into)
+
+                users
+                    .order(email.desc())
+                    .first::<User>(&mut conn)
+                    .map(Into::into)
                     .map_err(|err| {
                         eprintln!("Error fetching the newly created user: {:?}", err);
                         ServiceError::InternalServerError
