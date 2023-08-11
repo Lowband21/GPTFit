@@ -2,11 +2,9 @@
 
 use diesel::{
     r2d2::ConnectionManager,
-    sql_types::{Json, Jsonb},
-    Insertable, PgConnection, Queryable,
+    Insertable, PgConnection, Queryable, AsChangeset,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 use super::schema::*;
@@ -15,7 +13,7 @@ use super::schema::*;
 pub type Pool = r2d2::Pool<ConnectionManager<PgConnection>>;
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Insertable)]
-#[table_name = "fitness_profile"]
+#[diesel(table_name = fitness_profile)]
 pub struct NewUserProfile {
     pub user_id: Option<i32>,
     pub name: String,
@@ -61,7 +59,7 @@ impl User {
 }
 
 #[derive(Insertable)]
-#[table_name = "users"]
+#[diesel(table_name = users)]
 pub struct NewUser {
     pub user_id: i32,
     pub email: String,
@@ -80,7 +78,7 @@ impl From<User> for SlimUser {
     }
 }
 #[derive(Insertable)]
-#[table_name = "generated_text"]
+#[diesel(table_name = generated_text)]
 pub struct NewGeneratedText {
     pub prompt: String,
     pub response: String,
@@ -118,6 +116,32 @@ pub struct FitnessProfile {
     pub days_cant_train: Option<serde_json::Value>, // Using serde_json::Value for JSON fields
     pub preferred_workout_duration: i32,
     pub gym_or_home: String,
+    pub favorite_exercises: Option<serde_json::Value>,
+    pub equipment: Option<serde_json::Value>,
+}
+
+#[derive(AsChangeset, Serialize, Deserialize, Debug, Insertable)]
+#[diesel(table_name=fitness_profile)]
+pub struct FitnessProfileChangeset {
+    pub user_id: Option<i32>,
+    pub name: Option<String>,
+    pub age: Option<i32>,
+    pub height: Option<f32>,
+    pub height_unit: Option<String>,
+    pub weight: Option<f32>,
+    pub weight_unit: Option<String>,
+    pub gender: Option<String>,
+    pub years_trained: Option<i32>,
+    pub fitness_level: Option<String>,
+    pub injuries: Option<String>,
+    pub fitness_goal: Option<String>,
+    pub target_timeframe: Option<String>,
+    pub challenges: Option<String>,
+    pub exercise_blacklist: Option<serde_json::Value>,
+    pub frequency: Option<i32>,
+    pub days_cant_train: Option<serde_json::Value>, // Using serde_json::Value for JSON fields
+    pub preferred_workout_duration: Option<i32>,
+    pub gym_or_home: Option<String>,
     pub favorite_exercises: Option<serde_json::Value>,
     pub equipment: Option<serde_json::Value>,
 }

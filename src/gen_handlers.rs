@@ -10,7 +10,7 @@ use serde_derive::Serialize;
 use super::schema::*;
 use crate::{
     errors::ServiceError,
-    models::{FitnessProfile, NewGeneratedText, NewUserProfile, User},
+    models::{FitnessProfile, NewGeneratedText, NewUserProfile, User, FitnessProfileChangeset},
     schema::fitness_profile::all_columns,
     utils::verify,
     DbPool,
@@ -83,48 +83,71 @@ pub async fn save_user_profile(
 
     let user_id = user.unwrap().user_id;
 
-    let new_profile = FitnessProfile {
-        id: user_id,
-        user_id: Some(user_id),
-        name: profile.name.clone(),
-        age: profile.age,
-        height: profile.height,
-        height_unit: profile.height_unit.clone(),
-        weight: profile.weight,
-        weight_unit: profile.weight_unit.clone(),
-        gender: profile.gender.clone(),
-        years_trained: profile.years_trained,
-        fitness_level: profile.fitness_level.clone(),
-        injuries: profile.injuries.clone(),
-        fitness_goal: profile.fitness_goal.clone(),
-        target_timeframe: profile.target_timeframe.clone(),
-        challenges: profile.challenges.clone(),
+    let new_profile = FitnessProfileChangeset {
+        user_id: profile.user_id,
+        name: Some(profile.name.clone()),
+        age: Some(profile.age),
+        height: Some(profile.height),
+        height_unit: Some(profile.height_unit.clone()),
+        weight: Some(profile.weight),
+        weight_unit: Some(profile.weight_unit.clone()),
+        gender: Some(profile.gender.clone()),
+        years_trained: Some(profile.years_trained),
+        fitness_level: Some(profile.fitness_level.clone()),
+        injuries: Some(profile.injuries.clone()),
+        fitness_goal: Some(profile.fitness_goal.clone()),
+        target_timeframe: Some(profile.target_timeframe.clone()),
+        challenges: Some(profile.challenges.clone()),
         exercise_blacklist: profile.exercise_blacklist.clone(),
-        frequency: profile.frequency,
+        frequency: Some(profile.frequency),
         days_cant_train: profile.days_cant_train.clone(),
-        preferred_workout_duration: profile.preferred_workout_duration,
-        gym_or_home: profile.gym_or_home.clone(),
+        preferred_workout_duration: Some(profile.preferred_workout_duration),
+        gym_or_home: Some(profile.gym_or_home.clone()),
         favorite_exercises: profile.favorite_exercises.clone(),
         equipment: profile.equipment.clone(),
     };
 
-    match diesel::insert_into(fitness_profile::table)
-        .values(&new_profile)
-        .execute(&mut *conn)
-    {
-        Ok(_) => HttpResponse::Ok().json(ApiResponse {
-            data: Some(new_profile),
-            error: None,
-        }),
-        Err(err) => HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
-            data: None,
-            error: Some(format!("An error occurred: {}", err)),
-        }),
+    let existing_profile = fitness_profile::table
+        .filter(fitness_profile::user_id.eq(user_id))
+        .first::<FitnessProfile>(&mut *conn);
+
+    match existing_profile {
+        Ok(_) => {
+            match diesel::update(fitness_profile::table.filter(fitness_profile::user_id.eq(user_id)))
+                .set(&new_profile)
+                .execute(&mut *conn)
+            {
+                Ok(_) => HttpResponse::Ok().json(ApiResponse {
+                    data: Some(new_profile),
+                    error: None,
+                }),
+                Err(err) => HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
+                    data: None,
+                    error: Some(format!("An error occurred while updating: {}", err)),
+                }),
+            }
+        }
+        Err(_) => {
+            match diesel::insert_into(fitness_profile::table)
+                .values(&new_profile)
+                .execute(&mut *conn)
+            {
+                Ok(_) => HttpResponse::Ok().json(ApiResponse {
+                    data: Some(new_profile),
+                    error: None,
+                }),
+                Err(err) => HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
+                    data: None,
+                    error: Some(format!("An error occurred while inserting: {}", err)),
+                }),
+            }
+        }
     }
 }
 
 use openai_api_rust::chat::*;
 use openai_api_rust::*;
+use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Prompt {
@@ -149,7 +172,7 @@ pub async fn generate(
     // Add the system message outside the loop, as it's always the same
     let sys_message = Message {
         role: Role::System,
-        content: "You are an expert fitness program builder.".to_string(),
+        content: "You are an expert fitness program builder. You generate workouts chunk by chunk in json format. It's essential that you do not repeat information as your responses will be concatinated. Ensure that the plan adheres to the user's profile. Each week of the program should be complete and comprehensive.".to_string(),
     };
     messages_for_api.push(sys_message);
 
@@ -161,27 +184,72 @@ pub async fn generate(
 
     // Define how many weeks (macrocycle durations) we want to generate
     let total_weeks = 4; // Or extract from user input or another variable
-
-    for week_num in 1..=total_weeks {
-        // Constructing a new system message for each week
-        messages_for_api.push(Message {
-            role: Role::System,
-            content: format!(
-                "Provide a detailed workout plan for Week {}: 
-                === Week {} ===
-                Day 1:
-                - Exercise: {{exercise1_name}}
-                ...
-                Day 7:
-                ...
-                ",
-                week_num, week_num
+    messages_for_api.push(Message {
+        role: Role::System,
+        content: format!(
+"
+{{
+    \"week_number\": n,
+    \"week_details\": {{
+        \"Mon\": {{
+            \"rest_day\": false
+            \"exercise1\": {{
+                \"name\": \"{{exercise1_name}}\",
+                \"sets\": \"{{exercise1_sets}}\",
+                \"reps\": \"{{exercise1_reps}}\"
+            }},
+            \"exercise2\": {{
+                \"name\": \"{{exercise2_name}}\",
+                \"sets\": \"{{exercise2_sets}}\",
+                \"reps\": \"{{exercise2_reps}}\"
+            }}
+            \"exercise3\": {{
+                \"name\": \"{{exercise3_name}}\",
+                \"sets\": \"{{exercise3_sets}}\",
+                \"reps\": \"{{exercise3_reps}}\"
+            }}
+            \"exercise4\": {{
+                \"name\": \"{{exercise4_name}}\",
+                \"sets\": \"{{exercise4_sets}}\",
+                \"reps\": \"{{exercise4_reps}}\"
+            }}
+            \"exercise5\": {{
+                \"name\": \"{{exercise5_name}}\",
+                \"sets\": \"{{exercise5_sets}}\",
+                \"reps\": \"{{exercise5_reps}}\"
+            }}
+            ...
+        }},
+        \"Tue\": {{
+            ...
+        }},
+        \"Wed\": {{
+            ...
+        }},
+        \"Thu\": {{
+            ...
+        }},
+        \"Fri\": {{
+            ...
+        }},
+        \"Sat\": {{
+            ...
+        }},
+        \"Sun\": {{
+            ...
+        }}
+    }}
+}}
+                "
             ),
         });
 
+    for week_num in 1..=total_weeks {
+        // Constructing a new system message for each week
+
         let body = ChatBody {
             model: "gpt-4".to_string(),
-            max_tokens: Some(1000),
+            max_tokens: Some(5600),
             temperature: Some(0.9_f32),
             top_p: Some(0.5_f32),
             n: Some(1),
@@ -194,43 +262,56 @@ pub async fn generate(
             messages: messages_for_api.clone(),
         };
 
-        match openai.chat_completion_create(&body) {
-            Ok(response) => {
-                let message = response
-                    .choices
-                    .get(0)
-                    .and_then(|choice| choice.message.as_ref())
-                    .ok_or_else(|| {
-                        eprintln!(
-                            "Unexpected response format from OpenAI for week {}",
-                            week_num
-                        );
-                        HttpResponse::InternalServerError().json(format!(
-                            "Unexpected response from OpenAI for week {}",
-                            week_num
-                        ))
-                    })
-                    .unwrap();
+        let mut retries = 0;
+        const MAX_RETRIES: usize = 5; // Set this to your preferred number of retries
+        loop {
+            match openai.chat_completion_create(&body) {
+                Ok(response) => {
+                    let message = response
+                        .choices
+                        .get(0)
+                        .and_then(|choice| choice.message.as_ref())
+                        .ok_or_else(|| {
+                            eprintln!(
+                                "Unexpected response format from OpenAI for week {}",
+                                week_num
+                            );
+                            HttpResponse::InternalServerError().json(format!(
+                                "Unexpected response from OpenAI for week {}",
+                                week_num
+                            ))
+                        })
+                        .unwrap();
 
-                println!("Week {}: {:?}", week_num, message);
+                    println!("Week {}: {:?}", week_num, message);
 
-                // Add this week's response to messages_for_api so it will be included in next iteration's prompt
-                messages_for_api.push(Message {
-                    role: Role::Assistant,
-                    content: message.content.clone(),
-                });
+                    // Add this week's response to messages_for_api so it will be included in next iteration's prompt
+                    messages_for_api.push(Message {
+                        role: Role::Assistant,
+                        content: message.content.clone(),
+                    });
 
-                complete_response.push_str(&("\n".to_string() + &message.content));
+                    complete_response.push_str(&("\n".to_string() + &message.content));
 
-                // ... Save each week's response in your database if needed ...
+                    // ... Save each week's response in your database if needed ...
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("Error for week {}: {:?}", week_num, e);
+
+                    retries += 1;
+                    if retries <= MAX_RETRIES {
+                        sleep(Duration::from_secs(30)).await;
+                        continue;
+                    } else {
+                        return Ok(HttpResponse::InternalServerError().json(format!(
+                            "Failed to communicate with OpenAI for week {} after {} retries",
+                            week_num, MAX_RETRIES
+                        )));
+                    }
+                }
             }
-            Err(e) => {
-                eprintln!("Error for week {}: {:?}", week_num, e);
-                return Ok(HttpResponse::InternalServerError().json(format!(
-                    "Failed to communicate with OpenAI for week {}",
-                    week_num
-                )));
-            }
+
         }
     }
 
