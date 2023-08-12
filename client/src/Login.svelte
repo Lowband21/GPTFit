@@ -1,20 +1,5 @@
 <script>
     import { auth } from "./auth.js";
-    async function getCsrfToken() {
-        const response = await fetch("./api/csrf_token", {
-            method: "GET",
-        });
-        console.log(response);
-    
-        if (response.ok) {
-            const data = await response.json();
-            console.log("Got back CsrfToken:", data.csrfToken);
-            return data.csrfToken;
-        } else {
-            alert("Failed to fetch CSRF token.");
-            return null;
-        }
-    }
 
     let email = "";
     let password = "";
@@ -26,7 +11,6 @@
     async function login() {
         errorMessage = "";
         successMessage = "";
-        const csrfToken = await getCsrfToken();
         const response = await fetch("./api/auth", {
             method: "POST",
             headers: {

@@ -1,4 +1,5 @@
 
+use actix_identity::Identity;
 use actix_web::{
     web, Error as ActixError,
     HttpResponse,
@@ -24,6 +25,23 @@ struct ApiResponse<T> {
 
 use crate::schema::{fitness_profile, users};
 use diesel::prelude::*;
+
+use serde_json;
+
+fn get_user(identity: &Identity) -> anyhow::Result<User> {
+    match identity.id() {
+        Ok(user_json_str) => {
+            serde_json::from_str::<User>(&user_json_str).map_err(|e| {
+                eprintln!("Error deserializing user from identity: {:?}", e);
+                anyhow::Error::msg(format!("Deserialization error: {}", e))
+            })
+        },
+        Err(e) => {
+            eprintln!("Error fetching ID from identity: {:?}", e);
+            Err(anyhow::Error::msg(format!("Identity error: {}", e)))
+        }
+    }
+}
 
 pub async fn get_user_profile(
     pool: web::Data<DbPool>,
@@ -92,12 +110,12 @@ pub async fn save_user_profile(
         weight: Some(profile.weight),
         weight_unit: Some(profile.weight_unit.clone()),
         gender: Some(profile.gender.clone()),
-        years_trained: Some(profile.years_trained),
-        fitness_level: Some(profile.fitness_level.clone()),
-        injuries: Some(profile.injuries.clone()),
-        fitness_goal: Some(profile.fitness_goal.clone()),
-        target_timeframe: Some(profile.target_timeframe.clone()),
-        challenges: Some(profile.challenges.clone()),
+        years_trained: profile.years_trained,
+        fitness_level: profile.fitness_level.clone(),
+        injuries: profile.injuries.clone(),
+        fitness_goal: profile.fitness_goal.clone(),
+        target_timeframe: profile.target_timeframe.clone(),
+        challenges: profile.challenges.clone(),
         exercise_blacklist: profile.exercise_blacklist.clone(),
         frequency: Some(profile.frequency),
         days_cant_train: profile.days_cant_train.clone(),
@@ -155,6 +173,7 @@ pub struct Prompt {
 }
 
 pub async fn generate(
+    id: Option<Identity>,
     pool: web::Data<DbPool>,
     msg: web::Json<Prompt>,
 ) -> Result<HttpResponse, ActixError> {
@@ -172,7 +191,25 @@ pub async fn generate(
     // Add the system message outside the loop, as it's always the same
     let sys_message = Message {
         role: Role::System,
-        content: "You are an expert fitness program builder. You generate workouts chunk by chunk in json format. It's essential that you do not repeat information as your responses will be concatinated. Ensure that the plan adheres to the user's profile. Each week of the program should be complete and comprehensive.".to_string(),
+        content: "You are an expert fitness program builder. You generate workouts day by day in json format. It's essential that you do not repeat information as your responses will be concatenated. Ensure that the plan adheres to the user's profile. Each day of the program should be complete and comprehensive.".to_string(),
+    };
+    messages_for_api.push(sys_message);
+    // Add the system message outside the loop, as it's always the same
+    let sys_message = Message {
+        role: Role::System,
+        content: "
+        \"Day [#]\": {{
+            \"rest_day\": [true or false]
+            \"exercise[#]\": {{
+                \"name\": \"{{exercise1_name}}\",
+                \"sets\": \"{{exercise1_sets}}\",
+                \"reps\": \"{{exercise1_reps}}\"
+            }},
+            ...
+        }},
+    }}
+}}
+        ".to_string()
     };
     messages_for_api.push(sys_message);
 
@@ -182,74 +219,15 @@ pub async fn generate(
         content: msg.prompt.clone(),
     });
 
-    // Define how many weeks (macrocycle durations) we want to generate
-    let total_weeks = 4; // Or extract from user input or another variable
-    messages_for_api.push(Message {
-        role: Role::System,
-        content: format!(
-"
-{{
-    \"week_number\": n,
-    \"week_details\": {{
-        \"Mon\": {{
-            \"rest_day\": false
-            \"exercise1\": {{
-                \"name\": \"{{exercise1_name}}\",
-                \"sets\": \"{{exercise1_sets}}\",
-                \"reps\": \"{{exercise1_reps}}\"
-            }},
-            \"exercise2\": {{
-                \"name\": \"{{exercise2_name}}\",
-                \"sets\": \"{{exercise2_sets}}\",
-                \"reps\": \"{{exercise2_reps}}\"
-            }}
-            \"exercise3\": {{
-                \"name\": \"{{exercise3_name}}\",
-                \"sets\": \"{{exercise3_sets}}\",
-                \"reps\": \"{{exercise3_reps}}\"
-            }}
-            \"exercise4\": {{
-                \"name\": \"{{exercise4_name}}\",
-                \"sets\": \"{{exercise4_sets}}\",
-                \"reps\": \"{{exercise4_reps}}\"
-            }}
-            \"exercise5\": {{
-                \"name\": \"{{exercise5_name}}\",
-                \"sets\": \"{{exercise5_sets}}\",
-                \"reps\": \"{{exercise5_reps}}\"
-            }}
-            ...
-        }},
-        \"Tue\": {{
-            ...
-        }},
-        \"Wed\": {{
-            ...
-        }},
-        \"Thu\": {{
-            ...
-        }},
-        \"Fri\": {{
-            ...
-        }},
-        \"Sat\": {{
-            ...
-        }},
-        \"Sun\": {{
-            ...
-        }}
-    }}
-}}
-                "
-            ),
-        });
+    // Define how many days we want to generate
+    let total_days = 7; // Or extract from user input or another variable
 
-    for week_num in 1..=total_weeks {
-        // Constructing a new system message for each week
+    for day_num in 1..=total_days {
+        // Constructing a new system message for each day
 
         let body = ChatBody {
             model: "gpt-4".to_string(),
-            max_tokens: Some(5600),
+            max_tokens: Some(300),
             temperature: Some(0.9_f32),
             top_p: Some(0.5_f32),
             n: Some(1),
@@ -273,19 +251,19 @@ pub async fn generate(
                         .and_then(|choice| choice.message.as_ref())
                         .ok_or_else(|| {
                             eprintln!(
-                                "Unexpected response format from OpenAI for week {}",
-                                week_num
+                                "Unexpected response format from OpenAI for day {}",
+                                day_num
                             );
                             HttpResponse::InternalServerError().json(format!(
-                                "Unexpected response from OpenAI for week {}",
-                                week_num
+                                "Unexpected response from OpenAI for day {}",
+                                day_num
                             ))
                         })
                         .unwrap();
 
-                    println!("Week {}: {:?}", week_num, message);
+                    println!("Day {}: {:?}", day_num, message);
 
-                    // Add this week's response to messages_for_api so it will be included in next iteration's prompt
+                    // Add this day's response to messages_for_api so it will be included in next iteration's prompt
                     messages_for_api.push(Message {
                         role: Role::Assistant,
                         content: message.content.clone(),
@@ -293,11 +271,11 @@ pub async fn generate(
 
                     complete_response.push_str(&("\n".to_string() + &message.content));
 
-                    // ... Save each week's response in your database if needed ...
+                    // ... Save each day's response in your database if needed ...
                     break;
                 }
                 Err(e) => {
-                    eprintln!("Error for week {}: {:?}", week_num, e);
+                    eprintln!("Error for day {}: {:?}", day_num, e);
 
                     retries += 1;
                     if retries <= MAX_RETRIES {
@@ -305,22 +283,46 @@ pub async fn generate(
                         continue;
                     } else {
                         return Ok(HttpResponse::InternalServerError().json(format!(
-                            "Failed to communicate with OpenAI for week {} after {} retries",
-                            week_num, MAX_RETRIES
+                            "Failed to communicate with OpenAI for day {} after {} retries",
+                            day_num, MAX_RETRIES
                         )));
                     }
                 }
             }
-
         }
     }
 
-    // Save the complete response to your database
-    let new_entry = NewGeneratedText {
-        prompt: msg.prompt.clone(),
-        response: complete_response.clone(),
-        user_id: None,
+    let new_entry = match id {
+        Some(id) => {
+            match get_user(&id) {
+                Ok(user) => {
+                    // Save the complete response to your database
+                    NewGeneratedText {
+                        prompt: msg.prompt.clone(),
+                        response: complete_response.clone(),
+                        user_id: Some(user.user_id),
+                    }
+                },
+                Err(_) => {
+                    NewGeneratedText {
+                        prompt: msg.prompt.clone(),
+                        response: complete_response.clone(),
+                        user_id: None,
+                    }
+
+                },
+            }
+        },
+        None => {
+            NewGeneratedText {
+                prompt: msg.prompt.clone(),
+                response: complete_response.clone(),
+                user_id: None,
+            }
+            
+        },
     };
+
 
     let mut conn = pool
         .get()
@@ -352,17 +354,26 @@ struct Response {
     user_id: Option<i32>,
 }
 // Get all responses
-pub async fn get_responses(pool: web::Data<DbPool>) -> Result<HttpResponse, ActixError> {
+pub async fn get_responses(user: Option<Identity>, pool: web::Data<DbPool>) -> Result<HttpResponse, ActixError> {
     let mut conn = pool.get().unwrap();
 
-    let results = generated_text::table.load::<Response>(&mut *conn);
+    if let Some(user) = user {
+        let user = get_user(&user).unwrap();
+        println!("user_id: {}", user.user_id);
 
-    match results {
-        Ok(data) => Ok(HttpResponse::Ok().json(data)),
-        Err(err) => {
-            println!("Error querying for responses: {:?}", err);
-            Ok(HttpResponse::InternalServerError().json("Error querying for responses"))
+        let results = generated_text::table
+            .filter(generated_text::user_id.eq(user.user_id))
+            .load::<Response>(&mut *conn);
+
+        match results {
+            Ok(data) => Ok(HttpResponse::Ok().json(data)),
+            Err(err) => {
+                eprintln!("Error querying for responses: {:?}", err);
+                Ok(HttpResponse::InternalServerError().json("Error querying for responses"))
+            }
         }
+    }else {
+        Ok(HttpResponse::Unauthorized().json("User not logged in"))
     }
 }
 

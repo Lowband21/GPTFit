@@ -1265,6 +1265,7 @@ dependencies = [
  "actix-rt",
  "actix-session",
  "actix-web",
+ "anyhow",
  "chrono",
  "derive_more",
  "diesel",

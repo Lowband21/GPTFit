@@ -14,11 +14,9 @@ mod errors;
 mod gen_handlers;
 mod models;
 mod register_handler;
-mod routes;
 mod schema;
 mod utils;
 
-use crate::routes::*;
 
 type DbPool = Pool<ConnectionManager<PgConnection>>;
 
@@ -66,10 +64,6 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::resource("/responses")
                             .route(web::get().to(gen_handlers::get_responses)),
-                    )
-                    .service(
-                        web::resource("/csrf_token")
-                            .route(web::get().to(auth_handler::get_csrf_token)),
                     )
                     .service(
                         web::resource("/register_user")

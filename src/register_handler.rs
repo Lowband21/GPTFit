@@ -16,16 +16,16 @@ pub struct UserData {
     pub password: String,
 }
 
+use actix_identity::Identity;
 pub async fn register_user(
     user_data: web::Json<UserData>,
     pool: web::Data<Pool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    println!("Here");
     let user_data = user_data.into_inner();
     let username = user_data.username;
     let password = user_data.password;
     let user = web::block(move || query(username, password, pool)).await??;
-
+    
     Ok(HttpResponse::Ok().json(&user))
 }
 
@@ -33,7 +33,7 @@ fn query(
     username: String,
     password: String,
     pool: web::Data<Pool>,
-) -> Result<SlimUser, crate::errors::ServiceError> {
+) -> Result<User, crate::errors::ServiceError> {
     use crate::schema::users::dsl::*;
 
     let mut conn = pool.get().unwrap();

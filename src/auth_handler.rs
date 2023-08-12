@@ -21,24 +21,39 @@ pub struct AuthData {
 
 // we need the same data
 // simple aliasing makes the intentions clear and its more readable
-pub type LoggedUser = SlimUser;
+pub type LoggedUser = User;
 
 impl FromRequest for LoggedUser {
     type Error = Error;
-    type Future = Ready<Result<LoggedUser, Error>>;
+    type Future = Ready<Result<User, Error>>;
 
     fn from_request(req: &HttpRequest, pl: &mut Payload) -> Self::Future {
-        if let Ok(identity) = Identity::from_request(req, pl).into_inner() {
-            if let Ok(user_json) = identity.id() {
-                if let Ok(user) = serde_json::from_str(&user_json) {
-                    return ready(Ok(user));
+        match Identity::from_request(req, pl).into_inner() {
+            Ok(identity) => {
+                match identity.id() {
+                    Ok(user_json_str) => {
+                        match serde_json::from_str::<User>(&user_json_str) {
+                            Ok(user) => ready(Ok(user)),
+                            Err(e) => {
+                                eprintln!("Error deserializing user from identity: {:?}", e);
+                                ready(Err(ServiceError::Unauthorized.into()))
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Error fetching ID from identity: {:?}", e);
+                        ready(Err(ServiceError::Unauthorized.into()))
+                    }
                 }
+            },
+            Err(_) => {
+                eprintln!("Failed to extract identity from request");
+                ready(Err(ServiceError::Unauthorized.into()))
             }
         }
-
-        ready(Err(ServiceError::Unauthorized.into()))
     }
 }
+
 
 pub async fn logout(id: Identity) -> HttpResponse {
     id.logout();
@@ -52,17 +67,18 @@ pub async fn login(
 ) -> Result<HttpResponse, actix_web::Error> {
     let user = web::block(move || query(auth_data.into_inner(), pool)).await??;
 
-    let user_string = serde_json::to_string(&user).unwrap();
-    Identity::login(&req.extensions(), user_string).unwrap();
+    //let user_string = user.user_id.to_string();
+    let user = serde_json::to_string(&user).unwrap();
+    Identity::login(&req.extensions(), user).unwrap();
 
     Ok(HttpResponse::Ok().finish())
 }
 
-pub async fn get_me(logged_user: LoggedUser) -> HttpResponse {
+pub async fn get_me(user: Option<Identity>, logged_user: LoggedUser) -> HttpResponse {
     HttpResponse::Ok().json(logged_user)
 }
 /// Diesel query for authentication
-fn query(auth_data: AuthData, pool: web::Data<Pool>) -> Result<SlimUser, ServiceError> {
+fn query(auth_data: AuthData, pool: web::Data<Pool>) -> Result<User, ServiceError> {
     use crate::schema::users::dsl::{email, users};
 
     let mut conn = pool.get().unwrap();
@@ -82,19 +98,4 @@ fn query(auth_data: AuthData, pool: web::Data<Pool>) -> Result<SlimUser, Service
     }
 
     Err(ServiceError::Unauthorized)
-}
-
-use actix_session::Session;
-use serde_json::json;
-use uuid::Uuid;
-
-pub async fn get_csrf_token(session: Session) -> Result<HttpResponse, actix_web::Error> {
-    // Generate a new UUID token
-    let token = Uuid::new_v4().to_string();
-
-    // Store this token in the user's session
-    session.insert("csrf_token", &token)?;
-
-    // Return the token in the response
-    Ok(HttpResponse::Ok().json(json!({ "csrfToken": token })))
 }
