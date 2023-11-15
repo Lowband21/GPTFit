@@ -60,6 +60,10 @@ async fn main() -> std::io::Result<()> {
                             .route(web::get().to(gen_handlers::get_user_profile)),
                     )
                     .service(
+                        web::resource("/prompt")
+                            .route(web::get().to(gen_handlers::get_user_program_prompt)),
+                    )
+                    .service(
                         web::resource("/response/{id}")
                             .route(web::delete().to(gen_handlers::delete_response)),
                     )
@@ -100,7 +104,7 @@ async fn main() -> std::io::Result<()> {
     })
     .bind(format!(
         "0.0.0.0:{}",
-        env::var("PORT").unwrap_or_else(|_| "5000".to_string())
+        env::var("PORT").unwrap_or_else(|_| "5001".to_string())
     ))?
     .run()
     .await

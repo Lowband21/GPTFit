@@ -2,50 +2,13 @@
   import { writable, derived, get } from "svelte/store";
   import { onMount } from "svelte";
 
-  const user = writable({
-    frequency: "",
-    type: [],
-    days_cant_train: [],
-    favorite_exercises: [],
-  });
 
   let email = "";
   let isAuth = false;
   let generatedText = "";
   let isLoading = false;
   let error = null;
-
-  // define prompt as a derived store
-  const prompt = derived(user, ($user) => {
-    if ($user.name) {
-      // or check for any required property
-      return `My name is ${$user.name} and I am ${$user.age} years old. I am ${
-        $user.height
-      } ${$user.height_unit} tall and I weigh ${$user.weight} ${
-        $user.weight_unit
-      }. I am ${$user.gender} and I have been training for ${
-        $user.years_trained
-      } years. 
-      I prefer my workouts to be ${
-        $user.preferred_workout_duration
-      } minutes long and I ${
-        $user.gym_or_home === "gym"
-          ? "have access to a gym"
-          : "prefer to workout at home"
-      }. 
-      My fitness level is ${
-        $user.fitness_level
-      }. I have the following injuries: ${$user.injuries}. My fitness goal is ${
-        $user.fitness_goal
-      } and I aim to reach it in ${$user.target_timeframe}. 
-      The challenges I face in reaching my fitness goals are: ${
-        $user.challenges
-      }. The exercises I avoid are: ${$user.exercise_blacklist}. 
-      `;
-    } else {
-      return ""; // default value
-    }
-  });
+  let prompt = writable("");
 
   async function generateText() {
     isLoading = true;
@@ -101,7 +64,7 @@
     }
   };
   async function loadProfile() {
-    const response = await fetch(`./api/profile/${email}`, {
+    const response = await fetch(`./api/prompt`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -110,16 +73,9 @@
     });
 
     if (response.ok) {
-      const userProfile = await response.json();
-      console.log("userProfile:", userProfile.data); // Add this line
-      console.log("current user:", get(user)); // Add this line
-
-      if (userProfile && get(user)) {
-        // Check if both userProfile and get(user) are not undefined
-        user.set({ ...get(user), ...userProfile.data });
-      } else {
-        error = "Failed to load user profile.";
-      }
+      const api_response = await response.json();
+      prompt.set(api_response.data);
+      console.log("prompt:", prompt); // Add this line
     } else {
       error = "Failed to load user profile.";
     }
@@ -138,7 +94,7 @@
   {:else if isLoading}
     <div>Loading...</div>
   {:else}
-    {#if $user}
+    {#if isAuth}
       <textarea bind:value={$prompt} class="text-area" />
     {:else}
       <p>Loading user data...</p>
