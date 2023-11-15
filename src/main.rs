@@ -1,12 +1,13 @@
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
-use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::PgConnection;
 use dotenv::dotenv;
+use sqlx::migrate::Migrator;
+use sqlx::PgConnection;
+use sqlx::Pool;
 use std::env;
 
 use actix_identity::IdentityMiddleware;
-use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+use actix_session::{storage::RedisSessionStore, Session, SessionMiddleware};
 use actix_web::cookie::Key;
 
 mod auth_handler;
@@ -14,13 +15,11 @@ mod errors;
 mod gen_handlers;
 mod models;
 mod register_handler;
-mod schema;
 mod utils;
-
-type DbPool = Pool<ConnectionManager<PgConnection>>;
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
+    println!("Test print");
     dotenv().ok();
 
     std::env::set_var("RUST_LOG", "actix_web=info");
@@ -28,10 +27,14 @@ async fn main() -> std::io::Result<()> {
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let manager = ConnectionManager::<PgConnection>::new(database_url);
-    let pool: DbPool = Pool::builder()
-        .build(manager)
-        .expect("Failed to create pool.");
+    let pool = sqlx::PgPool::connect(&database_url).await.unwrap();
+    // Load and run migrations
+    //Migrator::new(std::path::Path::new("./migrations"))
+    //    .await
+    //    .unwrap()
+    //    .run(&pool)
+    //    .await
+    //    .unwrap();
 
     let redis_connection_string =
         std::env::var("REDIS_URL").unwrap_or_else(|_| String::from("redis://127.0.0.1:6379"));
@@ -57,16 +60,16 @@ async fn main() -> std::io::Result<()> {
                             .route(web::get().to(gen_handlers::get_user_profile)),
                     )
                     .service(
+                        web::resource("/prompt")
+                            .route(web::get().to(gen_handlers::get_user_program_prompt)),
+                    )
+                    .service(
                         web::resource("/response/{id}")
                             .route(web::delete().to(gen_handlers::delete_response)),
                     )
                     .service(
                         web::resource("/responses")
                             .route(web::get().to(gen_handlers::get_responses)),
-                    )
-                    .service(
-                        web::resource("/csrf_token")
-                            .route(web::get().to(auth_handler::get_csrf_token)),
                     )
                     .service(
                         web::resource("/register_user")
@@ -90,7 +93,7 @@ async fn main() -> std::io::Result<()> {
                         println!("Matching /api as webpage");
                         HttpResponse::NotFound().finish()
                     } else {
-                        println!("Matching file");
+                        println!("Matching {} as file", path);
                         match actix_files::NamedFile::open("./client/public/index.html") {
                             Ok(file) => file.into_response(&req),
                             Err(_) => HttpResponse::InternalServerError().finish(),
@@ -101,7 +104,7 @@ async fn main() -> std::io::Result<()> {
     })
     .bind(format!(
         "0.0.0.0:{}",
-        env::var("PORT").unwrap_or_else(|_| "5000".to_string())
+        env::var("PORT").unwrap_or_else(|_| "5001".to_string())
     ))?
     .run()
     .await

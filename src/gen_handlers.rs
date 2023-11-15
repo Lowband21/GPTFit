@@ -1,14 +1,15 @@
-use actix_web::{web, Error as ActixError, HttpResponse};
-use diesel::prelude::*;
-use serde::Deserialize;
-use serde_derive::Serialize;
-
-use super::schema::*;
+use crate::utils::verify;
 use crate::{
+    errors::ServiceError,
     models::{FitnessProfile, NewGeneratedText, NewUserProfile, User},
-    schema::fitness_profile::all_columns,
-    DbPool,
 };
+use actix_identity::Identity;
+use actix_web::{web, Error as ActixError, HttpResponse};
+use anyhow::Result as AnyResult;
+use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 #[derive(Serialize)]
 struct ApiResponse<T> {
@@ -16,108 +17,350 @@ struct ApiResponse<T> {
     error: Option<String>,
 }
 
-use crate::schema::{fitness_profile, users};
+use std::collections::HashMap;
 
-pub async fn get_user_profile(
-    pool: web::Data<DbPool>,
-    user_email: web::Path<String>,
-) -> HttpResponse {
-    let mut conn = match pool.get() {
-        Ok(connection) => connection,
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
-                data: None,
-                error: Some("Failed to get database connection".to_string()),
-            })
+use sqlx::FromRow;
+#[derive(FromRow, Debug)]
+pub struct FitnessProfileResponse {
+    id: i32,
+    user_id: i32,
+    profile_data: Json<FitnessProfile>,
+}
+#[derive(FromRow)]
+pub struct FitnessProgramResponse {
+    id: i32,
+    fitness_program: Json<FitnessProgram>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FitnessProgram {
+    mesocycles: HashMap<String, Mesocycle>, // Structure similar to mesocycle
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Mesocycle {
+    weeks: HashMap<String, Week>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Week {
+    days: Vec<Day>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Day {
+    rest_day: Option<bool>,
+    exercises: Option<HashMap<String, Exercise>>,
+    notes: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Exercise {
+    name: String,
+    sets: i32,
+    rep_range_min: Option<i32>,
+    rep_range_max: Option<i32>,
+    rpe: Option<i32>,      // Optional
+    duration: Option<String>, // Optional
+    notes: Option<String>,    // Optional
+}
+
+impl FitnessProgram {
+    pub fn to_user_friendly_string(&self) -> String {
+        let mut output = String::new();
+
+        for (mesocycle_name, mesocycle) in &self.mesocycles {
+            output.push_str(&format!("mesocycle: {}\n", mesocycle_name));
+            for (week_name, week) in &mesocycle.weeks {
+                output.push_str(&format!("  Week: {}\n", week_name));
+                for (i, day) in week.days.iter().enumerate() {
+                    if day.rest_day.unwrap_or(false) {
+                        output.push_str(&format!("    Day {}: Rest Day\n", i));
+                    } else {
+                        output.push_str(&format!("    Day {}:\n", i));
+                        if let Some(exercises) = &day.exercises {
+                            for (_exercise_name, exercise) in exercises {
+                                output.push_str(&format!("      Exercise: {}\n", exercise.name));
+                                output.push_str(&format!("        Sets: {}\n", exercise.sets));
+                                if let (Some(min), Some(max)) =
+                                    (exercise.rep_range_min, exercise.rep_range_max)
+                                {
+                                    output.push_str(&format!("        Reps: {}-{}\n", min, max));
+                                }
+                                if let Some(rpe) = &exercise.rpe {
+                                    output.push_str(&format!("        RPE: {}\n", rpe));
+                                }
+                                if let Some(duration) = &exercise.duration {
+                                    output.push_str(&format!("        Duration: {}\n", duration));
+                                }
+                                if let Some(notes) = &exercise.notes {
+                                    output.push_str(&format!("        Notes: {}\n", notes));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        output
+    }
+
+    fn from_week(week: Week) -> FitnessProgram {
+        // Create an empty mesocycle
+        let mut mesocycle = Mesocycle {
+            weeks: HashMap::new(),
+        };
+
+        // Insert the provided week into the mesocycle
+        // Assuming a naming convention for the week, e.g., "Week 1"
+        mesocycle.weeks.insert("Week 01".to_string(), week);
+
+        // Create a macrocycle with the single mesocycle
+        let mut macrocycle = HashMap::new();
+        macrocycle.insert("Mesocycle 01".to_string(), mesocycle);
+
+        // Construct and return the FitnessProgram
+        FitnessProgram {
+            mesocycles: macrocycle,
+        }
+    }
+}
+
+fn get_user(identity: &Identity) -> AnyResult<User> {
+    match identity.id() {
+        Ok(user_json_str) => serde_json::from_str::<User>(&user_json_str).map_err(|e| {
+            eprintln!("Error deserializing user from identity: {:?}", e);
+            anyhow::Error::msg(format!("Deserialization error: {}", e))
+        }),
+        Err(e) => {
+            eprintln!("Error fetching ID from identity: {:?}", e);
+            Err(anyhow::Error::msg(format!("Identity error: {}", e)))
+        }
+    }
+}
+
+pub async fn get_user_program_prompt(
+    identity_opt: Option<Identity>,
+    pool: web::Data<PgPool>,
+) -> HttpResponse {
+    let user_id = match identity_opt {
+        Some(id) => match get_user(&id) {
+            Ok(user) => user.user_id,
+            Err(_) => -1,
+        },
+        None => -1,
     };
 
-    log::info!("Executing user profile query for email: {}", user_email);
-    let user_profile = users::table
-        .inner_join(
-            fitness_profile::table.on(users::user_id.nullable().eq(fitness_profile::user_id)),
-        )
-        .filter(users::email.eq(&user_email.into_inner()))
-        .select(all_columns)
-        .first::<FitnessProfile>(&mut conn);
+    let user_profile = sqlx::query_as::<_, FitnessProfileResponse>(
+        "SELECT * FROM fitness_profiles"
+    )
+    .bind(user_id)
+    .fetch_one(pool.get_ref())
+    .await;
+
+    match user_profile {
+        Ok(profile) =>{
+            let data = profile_to_prompt(&profile.profile_data.0);
+            println!("Sending prompt: {}", data);
+            HttpResponse::Ok().json(ApiResponse {
+                data: Some(data),
+                error: None,
+            })
+        },
+        Err(err) => {
+            HttpResponse::InternalServerError().json(ApiResponse::<String> {
+                data: None,
+                error: Some(format!("Error updating program: {}", err)),
+            })
+        }
+    }
+}
+
+pub fn profile_to_prompt(profile: &FitnessProfile) -> String {
+    let mut prompt = String::from("Create a fitness program");
+
+    if let Some(name) = &profile.name {
+        prompt.push_str(&format!(" for {}", name));
+    }
+
+    if let Some(age) = profile.age {
+        prompt.push_str(&format!(", age: {}", age));
+    }
+
+    if let Some(height) = profile.height {
+        prompt.push_str(&format!(", height: {} {}", height, profile.height_unit));
+    }
+
+    if let Some(weight) = profile.weight {
+        prompt.push_str(&format!(", weight: {} {}", weight, profile.weight_unit));
+    }
+
+    if let Some(gender) = &profile.gender {
+        prompt.push_str(&format!(", gender: {}", gender));
+    }
+
+    if let Some(years) = profile.years_trained {
+        prompt.push_str(&format!(", years trained: {}", years));
+    }
+
+    if let Some(level) = &profile.fitness_level {
+        prompt.push_str(&format!(", fitness level: {}", level));
+    }
+
+    if let Some(injuries) = &profile.injuries {
+        prompt.push_str(&format!(", injuries: {}", injuries));
+    }
+
+    if let Some(goal) = &profile.fitness_goal {
+        prompt.push_str(&format!(", goal: {}", goal));
+    }
+
+    if let Some(timeframe) = &profile.target_timeframe {
+        prompt.push_str(&format!(", timeframe: {}", timeframe));
+    }
+
+    if let Some(challenges) = &profile.challenges {
+        prompt.push_str(&format!(", challenges: {}", challenges));
+    }
+
+    if let Some(frequency) = profile.frequency {
+        prompt.push_str(&format!(", training frequency per week: {}", frequency));
+    }
+
+    if let Some(duration) = profile.preferred_workout_duration {
+        prompt.push_str(&format!(", preferred workout duration: {} minutes", duration));
+    }
+
+    if let Some(setting) = &profile.gym_or_home {
+        prompt.push_str(&format!(", setting: {}", setting));
+    }
+
+    // Handle JSON fields like exercise_blacklist, favorite_exercises, equipment, etc.
+    // Example for exercise_blacklist:
+    if let Some(blacklist) = &profile.exercise_blacklist {
+        prompt.push_str(&format!(", exercise blacklist: {}", blacklist));
+    }
+
+    // Similar handling for favorite_exercises and equipment
+
+    prompt
+}
+
+pub async fn get_user_profile(
+    identity_opt: Option<Identity>,
+    pool: web::Data<PgPool>,
+    user_email: web::Path<String>,
+) -> HttpResponse {
+    println!("Getting user profile");
+
+    let user_id = match identity_opt {
+        Some(id) => match get_user(&id) {
+            Ok(user) => user.user_id,
+            Err(_) => -1,
+        },
+        None => -1,
+    };
+
+    let user_profile = sqlx::query_as::<_, FitnessProfileResponse>(
+        "SELECT * FROM fitness_profiles"
+    )
+    .bind(user_id)
+    .fetch_one(pool.get_ref())
+    .await;
 
     match user_profile {
         Ok(profile) => HttpResponse::Ok().json(ApiResponse {
-            data: Some(profile),
+            data: Some(profile.profile_data),
             error: None,
         }),
         Err(err) => {
-            log::error!("Failed to fetch user profile. Detailed error: {:?}", err);
-            HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
-                data: None,
-                error: Some(format!("An error occurred: {}", err)),
+            println!("User profile not found with error {}, returning default", err);
+            let profile = FitnessProfile {
+                name: Some("TestUser".to_string()),
+                age: Some(20),
+                height: Some(6.),
+                height_unit: "ft".to_string(),
+                weight: Some(180.),
+                weight_unit: "lbs".to_string(),
+                gender: Some("male".to_string()),
+                years_trained: Some(2),
+                fitness_level: Some("beginner".to_string()),
+                injuries: None,
+                fitness_goal: None,
+                target_timeframe: None,
+                challenges: None,
+                exercise_blacklist: None,
+                frequency: Some(5),
+                days_cant_train: None,
+                preferred_workout_duration: Some(50),
+                gym_or_home: Some("Gym".to_string()),
+                favorite_exercises: None,
+                equipment: None,
+            };
+            HttpResponse::Ok().json(ApiResponse {
+                data: Some(profile),
+                error: None,
             })
         }
     }
 }
 
 pub async fn save_user_profile(
-    profile: web::Json<NewUserProfile>,
-    pool: web::Data<DbPool>,
+    identity_opt: Option<Identity>,
+    pool: web::Data<PgPool>,
     user_email: web::Path<String>,
+    updated_profile: web::Json<NewUserProfile>,
 ) -> HttpResponse {
-    let mut conn = pool.get().unwrap();
+    println!("Saving user profile");
 
-    let user = users::table
-        .filter(users::email.eq(user_email.into_inner()))
-        .first::<User>(&mut *conn);
-
-    if let Err(err) = user {
-        return HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
-            data: None,
-            error: Some(format!("User not found: {}", err)),
-        });
-    }
-
-    let user_id = user.unwrap().user_id;
-
-    let new_profile = FitnessProfile {
-        id: user_id,
-        user_id: Some(user_id),
-        name: profile.name.clone(),
-        age: profile.age,
-        height: profile.height,
-        height_unit: profile.height_unit.clone(),
-        weight: profile.weight,
-        weight_unit: profile.weight_unit.clone(),
-        gender: profile.gender.clone(),
-        years_trained: profile.years_trained,
-        fitness_level: profile.fitness_level.clone(),
-        injuries: profile.injuries.clone(),
-        fitness_goal: profile.fitness_goal.clone(),
-        target_timeframe: profile.target_timeframe.clone(),
-        challenges: profile.challenges.clone(),
-        exercise_blacklist: profile.exercise_blacklist.clone(),
-        frequency: profile.frequency,
-        days_cant_train: profile.days_cant_train.clone(),
-        preferred_workout_duration: profile.preferred_workout_duration,
-        gym_or_home: profile.gym_or_home.clone(),
-        favorite_exercises: profile.favorite_exercises.clone(),
-        equipment: profile.equipment.clone(),
+    let user_id = match identity_opt {
+        Some(id) => match get_user(&id) {
+            Ok(user) => user.user_id,
+            Err(_) => -1,
+        },
+        None => -1,
     };
 
-    match diesel::insert_into(fitness_profile::table)
-        .values(&new_profile)
-        .execute(&mut *conn)
-    {
-        Ok(_) => HttpResponse::Ok().json(ApiResponse {
-            data: Some(new_profile),
-            error: None,
-        }),
-        Err(err) => HttpResponse::InternalServerError().json(ApiResponse::<FitnessProfile> {
-            data: None,
-            error: Some(format!("An error occurred: {}", err)),
-        }),
-    }
+    let current_profile_opt = sqlx::query_as::<_, FitnessProfileResponse>("SELECT * FROM fitness_profiles").bind(user_id).fetch_optional(pool.get_ref()).await;
+
+    let update_result = if let Ok(Some(current_profile)) = current_profile_opt {
+        println!("Existing user profile {:#?}", current_profile);
+        println!("Updated existing user profile");
+        sqlx::query!("UPDATE fitness_profiles SET profile_data = $1 WHERE user_id = $2",
+            updated_profile.program_data,user_id)
+            .execute(pool.get_ref())
+            .await
+    } else {
+        println!("Created new user profile");
+        sqlx::query!("INSERT INTO fitness_profiles (user_id, profile_data) VALUES ($1, $2)",
+            user_id, updated_profile.program_data)
+            .execute(pool.get_ref())
+            .await
+        
+    };
+
+    // Update the fitness_programs table
+
+    match update_result {
+                Ok(_) => {
+                    println!("Program updated successfully");
+                    HttpResponse::Ok().json(ApiResponse {
+                    data: Some("Program updated successfully".to_string()),
+                    error: None,
+                })}
+                ,
+                Err(err) => {
+                    println!("Failed to update program");
+                    HttpResponse::InternalServerError().json(ApiResponse::<String> {
+                    data: None,
+                    error: Some(format!("Error updating program: {}", err)),
+                })},
+            }
 }
 
 use openai_api_rust::chat::*;
 use openai_api_rust::*;
+use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Prompt {
@@ -125,7 +368,8 @@ pub struct Prompt {
 }
 
 pub async fn generate(
-    pool: web::Data<DbPool>,
+    identity_opt: Option<Identity>,
+    pool: web::Data<PgPool>,
     msg: web::Json<Prompt>,
 ) -> Result<HttpResponse, ActixError> {
     println!("In Chat with message: {:?}", msg);
@@ -134,7 +378,7 @@ pub async fn generate(
     let openai = OpenAI::new(auth, "https://api.openai.com/v1/");
 
     // Initialize the complete response as an empty string
-    let mut complete_response = String::new();
+    let mut complete_response = Week { days: Vec::new() };
 
     // List to store messages for API
     let mut messages_for_api: Vec<Message> = Vec::new();
@@ -142,7 +386,29 @@ pub async fn generate(
     // Add the system message outside the loop, as it's always the same
     let sys_message = Message {
         role: Role::System,
-        content: "You are an expert fitness program builder.".to_string(),
+        content: "You are an expert fitness program builder. You generate a weeks worth of workouts a single day at a time in json format. It's essential that you do not repeat information as your responses will be concatenated. Ensure that the plan adheres to the user's profile. Each day of the program should be complete and comprehensive.".to_string(),
+    };
+    messages_for_api.push(sys_message);
+    // Add the system message outside the loop, as it's always the same
+    let sys_message = Message {
+        role: Role::System,
+        content: "
+            \"rest_day\": [true or false]
+            \"exercises\": {{
+                \"exercise[#]\": {{
+                    \"name\": \"{{exercise1_name}}\",
+                    \"sets\": {{exercise1_sets}},
+                    \"rep_range_min\": {{exercise1_rep_range_min}} // Optional
+                    \"rep_range_max\": {{exercise1_rep_range_max}} // Optional
+                    \"rpe\": {{rpe}}, // Optional
+                    \"duration\": {{duration}}, // Optional
+                    \"notes\": \"{{notes}}\", // Optional
+                }},
+                ...
+            }}
+            \"notes\" : \"{{notes}}, // Optional
+        "
+        .to_string(),
     };
     messages_for_api.push(sys_message);
 
@@ -152,145 +418,179 @@ pub async fn generate(
         content: msg.prompt.clone(),
     });
 
-    // Define how many weeks (macrocycle durations) we want to generate
-    let total_weeks = 4; // Or extract from user input or another variable
+    // Define how many days we want to generate
+    let total_days = 7; // Or extract from user input or another variable
 
-    for week_num in 1..=total_weeks {
-        // Constructing a new system message for each week
-        messages_for_api.push(Message {
-            role: Role::System,
-            content: format!(
-                "Provide a detailed workout plan for Week {}: 
-                === Week {} ===
-                Day 1:
-                - Exercise: {{exercise1_name}}
-                ...
-                Day 7:
-                ...
-                ",
-                week_num, week_num
-            ),
-        });
+    for day_num in 1..=total_days {
+        // Constructing a new system message for each day
 
         let body = ChatBody {
-            model: "gpt-4".to_string(),
-            max_tokens: Some(1000),
+            model: "gpt-4-1106-preview".to_string(),
+            max_tokens: None,
             temperature: Some(0.9_f32),
-            top_p: Some(0.5_f32),
+            top_p: None,
             n: Some(1),
             stream: Some(false),
             stop: None,
             presence_penalty: None,
-            frequency_penalty: Some(0.5_f32),
+            frequency_penalty: None,
             logit_bias: None,
             user: None,
             messages: messages_for_api.clone(),
+            response_format: Some(ResponseFormat {
+                type_field: "json_object".to_string(),
+            }),
         };
 
-        match openai.chat_completion_create(&body) {
-            Ok(response) => {
-                let message = response
-                    .choices
-                    .get(0)
-                    .and_then(|choice| choice.message.as_ref())
-                    .ok_or_else(|| {
-                        eprintln!(
-                            "Unexpected response format from OpenAI for week {}",
-                            week_num
-                        );
-                        HttpResponse::InternalServerError().json(format!(
-                            "Unexpected response from OpenAI for week {}",
-                            week_num
-                        ))
-                    })
-                    .unwrap();
+        let mut retries = 0;
+        const MAX_RETRIES: usize = 5; // Set this to your preferred number of retries
+        loop {
+            match openai.chat_completion_create(&body) {
+                Ok(response) => {
+                    let message = response
+                        .choices
+                        .get(0)
+                        .and_then(|choice| choice.message.as_ref())
+                        .ok_or_else(|| {
+                            eprintln!("Unexpected response format from OpenAI for day {}", day_num);
+                            HttpResponse::InternalServerError().json(format!(
+                                "Unexpected response from OpenAI for day {}",
+                                day_num
+                            ))
+                        })
+                        .unwrap();
 
-                println!("Week {}: {:?}", week_num, message);
+                    println!("Day {}: {:?}", day_num, message);
 
-                // Add this week's response to messages_for_api so it will be included in next iteration's prompt
-                messages_for_api.push(Message {
-                    role: Role::Assistant,
-                    content: message.content.clone(),
-                });
+                    // Add this day's response to messages_for_api so it will be included in next iteration's prompt
+                    messages_for_api.push(Message {
+                        role: Role::Assistant,
+                        content: message.content.clone(),
+                    });
 
-                complete_response.push_str(&("\n".to_string() + &message.content));
+                    complete_response
+                        .days
+                        .push(serde_json::from_str(message.content.as_str()).unwrap());
 
-                // ... Save each week's response in your database if needed ...
-            }
-            Err(e) => {
-                eprintln!("Error for week {}: {:?}", week_num, e);
-                return Ok(HttpResponse::InternalServerError().json(format!(
-                    "Failed to communicate with OpenAI for week {}",
-                    week_num
-                )));
+                    // ... Save each day's response in your database if needed ...
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("Error for day {}: {:?}", day_num, e);
+
+                    retries += 1;
+                    if retries <= MAX_RETRIES {
+                        sleep(Duration::from_secs(30)).await;
+                        continue;
+                    } else {
+                        return Ok(HttpResponse::InternalServerError().json(format!(
+                            "Failed to communicate with OpenAI for day {} after {} retries",
+                            day_num, MAX_RETRIES
+                        )));
+                    }
+                }
             }
         }
     }
 
-    // Save the complete response to your database
-    let new_entry = NewGeneratedText {
-        prompt: msg.prompt.clone(),
-        response: complete_response.clone(),
-        user_id: None,
+    let user_id = match identity_opt {
+        Some(id) => match get_user(&id) {
+            Ok(user) => user.user_id,
+            Err(_) => -1,
+        },
+        None => -1,
     };
+    let program_from_string: FitnessProgram = FitnessProgram::from_week(complete_response);
 
-    let mut conn = pool
-        .get()
-        .map_err(|_| HttpResponse::InternalServerError().json("Failed to obtain DB connection"))
-        .unwrap();
+    sqlx::query("INSERT INTO fitness_programs (user_id, program_data) VALUES ($1, $2)")
+        .bind(&user_id)
+        .bind(
+            serde_json::from_str::<Json<FitnessProgram>>(
+                serde_json::to_string(&program_from_string)
+                    .unwrap()
+                    .as_str(),
+            )
+            .unwrap(),
+        )
+        .execute(pool.get_ref())
+        .await
+        .map_err(|err| {
+            eprintln!("Error during program insertion: {:?}", err);
+            println!("eprintln should have output something directly above");
+            ServiceError::InternalServerError
+        })?;
 
-    diesel::insert_into(generated_text::table)
-        .values(&new_entry)
-        .execute(&mut *conn)
-        .map_err(|e| {
-            eprintln!("Error saving generated text: {:?}", e);
-            HttpResponse::InternalServerError().json("Failed to save generated text")
-        })
-        .unwrap();
+    //diesel::insert_into(generated_text::table)
+    //    .values(&new_entry)
+    //    .execute(&mut *conn)
+    //    .map_err(|e| {
+    //        eprintln!("Error saving generated text: {:?}", e);
+    //        HttpResponse::InternalServerError().json("Failed to save generated text")
+    //    })
+    //    .unwrap();
 
-    Ok(HttpResponse::Ok().json(complete_response))
+    Ok(HttpResponse::Ok().body(program_from_string.to_user_friendly_string()))
 }
-// This struct might be useful for deserializing the body or path info
+#[derive(Serialize, Deserialize, Debug)]
+struct Response {
+    id: i32,
+    response: String,
+}
 #[derive(Deserialize)]
 pub struct Info {
     id: i32,
 }
-// Assuming you have a struct like this for the database
-#[derive(Queryable, Serialize)]
-struct Response {
-    id: i32,
-    prompt: String,
-    response: String,
-    user_id: Option<i32>,
-}
-// Get all responses
-pub async fn get_responses(pool: web::Data<DbPool>) -> Result<HttpResponse, ActixError> {
-    let mut conn = pool.get().unwrap();
+pub async fn get_responses(
+    user: Option<Identity>,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ActixError> {
+    println!("Running get responses route");
+    if let Some(identity) = user {
+        if let Ok(user) = get_user(&identity) {
+            let responses: Vec<Response> = sqlx::query_as::<_, FitnessProgramResponse>(
+                "SELECT id, program_data as fitness_program FROM fitness_programs WHERE user_id = $1",
+            )
+            .bind(user.user_id)
+            .fetch_all(pool.get_ref())
+            .await
+            .map_err(|err| {
+                eprintln!("Error during program retreval: {:?}", err);
+                ServiceError::InternalServerError
+            })?
+            .iter()
+            .map(|fitness_program_response| {
+                Response { 
+                    response: fitness_program_response.fitness_program.to_user_friendly_string(),
+                    id: fitness_program_response.id,
+                }
+            })
+            .collect();
 
-    let results = generated_text::table.load::<Response>(&mut *conn);
-
-    match results {
-        Ok(data) => Ok(HttpResponse::Ok().json(data)),
-        Err(err) => {
-            println!("Error querying for responses: {:?}", err);
-            Ok(HttpResponse::InternalServerError().json("Error querying for responses"))
+            println!(
+                "Responses from database {:#?} with user id {}",
+                responses, user.user_id
+            );
+            Ok(HttpResponse::Ok().json(responses))
+        } else {
+            Ok(HttpResponse::Unauthorized().json("User not logged in"))
         }
+    } else {
+        Ok(HttpResponse::Unauthorized().json("User not logged in"))
     }
 }
 
-// Delete a specific response
 pub async fn delete_response(
     path: web::Path<Info>,
-    pool: web::Data<DbPool>,
+    pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, ActixError> {
-    let mut conn = pool.get().unwrap();
+    let result = sqlx::query!("DELETE FROM fitness_programs WHERE id = $1", path.id)
+        .execute(pool.get_ref())
+        .await;
 
-    let count = diesel::delete(generated_text::table.find(path.id)).execute(&mut *conn);
-
-    match count {
+    match result {
         Ok(_) => Ok(HttpResponse::Ok().finish()),
         Err(err) => {
-            println!("Error deleting response: {:?}", err);
+            eprintln!("Error deleting response: {:?}", err);
             Ok(HttpResponse::InternalServerError().json("Error deleting response"))
         }
     }

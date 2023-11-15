@@ -4,12 +4,12 @@ use actix_identity::Identity;
 use actix_web::{
     dev::Payload, web, Error, FromRequest, HttpMessage as _, HttpRequest, HttpResponse,
 };
-use diesel::prelude::*;
 use serde::Deserialize;
+use sqlx::{PgPool, Pool};
 
 use crate::{
     errors::ServiceError,
-    models::{Pool, SlimUser, User},
+    models::{SlimUser, User},
     utils::verify,
 };
 
@@ -17,27 +17,36 @@ use crate::{
 pub struct AuthData {
     pub email: String,
     pub password: String,
-    pub csrf_token: String,
 }
 
 // we need the same data
 // simple aliasing makes the intentions clear and its more readable
-pub type LoggedUser = SlimUser;
+pub type LoggedUser = User;
 
 impl FromRequest for LoggedUser {
     type Error = Error;
-    type Future = Ready<Result<LoggedUser, Error>>;
+    type Future = Ready<Result<User, Error>>;
 
     fn from_request(req: &HttpRequest, pl: &mut Payload) -> Self::Future {
-        if let Ok(identity) = Identity::from_request(req, pl).into_inner() {
-            if let Ok(user_json) = identity.id() {
-                if let Ok(user) = serde_json::from_str(&user_json) {
-                    return ready(Ok(user));
+        match Identity::from_request(req, pl).into_inner() {
+            Ok(identity) => match identity.id() {
+                Ok(user_json_str) => match serde_json::from_str::<User>(&user_json_str) {
+                    Ok(user) => ready(Ok(user)),
+                    Err(e) => {
+                        eprintln!("Error deserializing user from identity: {:?}", e);
+                        ready(Err(ServiceError::Unauthorized.into()))
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Error fetching ID from identity: {:?}", e);
+                    ready(Err(ServiceError::Unauthorized.into()))
                 }
+            },
+            Err(_) => {
+                eprintln!("Failed to extract identity from request");
+                ready(Err(ServiceError::Unauthorized.into()))
             }
         }
-
-        ready(Err(ServiceError::Unauthorized.into()))
     }
 }
 
@@ -48,67 +57,41 @@ pub async fn logout(id: Identity) -> HttpResponse {
 
 pub async fn login(
     req: HttpRequest,
-    auth_data: web::Json<AuthData>,
-    pool: web::Data<Pool>,
-    session: Session,
-) -> Result<HttpResponse, actix_web::Error> {
-    // Validate the CSRF token first
-    if !validate_csrf_token(&session, &auth_data.csrf_token) {
-        return Err(actix_web::error::ErrorUnauthorized("Invalid CSRF Token"));
-    }
+    login_data: web::Json<AuthData>,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ServiceError> {
+    let login_data = login_data.into_inner();
+    let email = login_data.email;
+    let password = login_data.password;
 
-    let user = web::block(move || query(auth_data.into_inner(), pool)).await??;
-
-    let user_string = serde_json::to_string(&user).unwrap();
-    Identity::login(&req.extensions(), user_string).unwrap();
-
-    Ok(HttpResponse::Ok().finish())
-}
-
-fn validate_csrf_token(session: &Session, token: &str) -> bool {
-    match session.get::<String>("csrf_token") {
-        Ok(Some(stored_token)) => token == stored_token,
-        _ => false,
-    }
-}
-
-pub async fn get_me(logged_user: LoggedUser) -> HttpResponse {
-    HttpResponse::Ok().json(logged_user)
-}
-/// Diesel query for authentication
-fn query(auth_data: AuthData, pool: web::Data<Pool>) -> Result<SlimUser, ServiceError> {
-    use crate::schema::users::dsl::{email, users};
-
-    let mut conn = pool.get().unwrap();
-
-    let mut items = users
-        .filter(email.eq(&auth_data.email))
-        .load::<User>(&mut conn)?;
-
-    if let Some(user) = items.pop() {
-        if let Ok(matching) = verify(&user.hash, &auth_data.password) {
-            if matching {
-                return Ok(user.into());
-            } else {
-                return Err(ServiceError::BadRequest("Invalid password".into()));
-            }
+    match validate_user(&email, &password, pool.get_ref()).await {
+        Ok(user) => {
+            Identity::login(&req.extensions(), serde_json::to_string(&user).unwrap()).unwrap();
+            Ok(HttpResponse::Ok().json(user))
         }
+        Err(e) => Err(e.into()),
     }
-
-    Err(ServiceError::Unauthorized)
 }
 
-use actix_session::Session;
-use serde_json::json;
-use uuid::Uuid;
+async fn validate_user(
+    username: &str,
+    password: &str,
+    pool: &PgPool,
+) -> Result<User, ServiceError> {
+    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+        .bind(username)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| ServiceError::InternalServerError)?
+        .ok_or(ServiceError::BadRequest("User not found".into()))?;
 
-pub async fn get_csrf_token(session: Session) -> Result<HttpResponse, actix_web::Error> {
-    // Generate a new UUID token
-    let token = Uuid::new_v4().to_string();
+    if verify(&user.hash, password)? {
+        Ok(user)
+    } else {
+        Err(ServiceError::BadRequest("Invalid password".into()))
+    }
+}
 
-    // Store this token in the user's session
-    session.insert("csrf_token", &token)?;
-
-    // Return the token in the response
-    Ok(HttpResponse::Ok().json(json!({ "csrfToken": token })))
+pub async fn get_me(_user: Option<Identity>, logged_user: LoggedUser) -> HttpResponse {
+    HttpResponse::Ok().json(logged_user)
 }
