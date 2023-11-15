@@ -2,7 +2,6 @@ use std::convert::From;
 
 use actix_web::{error::ResponseError, HttpResponse};
 use derive_more::Display;
-use diesel::result::{DatabaseErrorKind, Error as DBError};
 use uuid::Error as ParseError;
 
 #[derive(Debug, Display)]
@@ -38,19 +37,19 @@ impl From<ParseError> for ServiceError {
     }
 }
 
-impl From<DBError> for ServiceError {
-    fn from(error: DBError) -> ServiceError {
-        // Right now we just care about UniqueViolation from diesel
-        // But this would be helpful to easily map errors as our app grows
-        match error {
-            DBError::DatabaseError(kind, info) => {
-                if let DatabaseErrorKind::UniqueViolation = kind {
-                    let message = info.details().unwrap_or_else(|| info.message()).to_owned();
-                    return ServiceError::BadRequest(message);
-                }
-                ServiceError::InternalServerError
-            }
-            _ => ServiceError::InternalServerError,
-        }
-    }
-}
+//impl From<DBError> for ServiceError {
+//    fn from(error: DBError) -> ServiceError {
+//        // Right now we just care about UniqueViolation from diesel
+//        // But this would be helpful to easily map errors as our app grows
+//        match error {
+//            DBError::DatabaseError(kind, info) => {
+//                if let DatabaseErrorKind::UniqueViolation = kind {
+//                    let message = info.details().unwrap_or_else(|| info.message()).to_owned();
+//                    return ServiceError::BadRequest(message);
+//                }
+//                ServiceError::InternalServerError
+//            }
+//            _ => ServiceError::InternalServerError,
+//        }
+//    }
+//}

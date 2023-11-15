@@ -4,12 +4,12 @@ use actix_identity::Identity;
 use actix_web::{
     dev::Payload, web, Error, FromRequest, HttpMessage as _, HttpRequest, HttpResponse,
 };
-use diesel::prelude::*;
 use serde::Deserialize;
+use sqlx::{PgPool, Pool};
 
 use crate::{
     errors::ServiceError,
-    models::{Pool, SlimUser, User},
+    models::{SlimUser, User},
     utils::verify,
 };
 
@@ -29,21 +29,17 @@ impl FromRequest for LoggedUser {
 
     fn from_request(req: &HttpRequest, pl: &mut Payload) -> Self::Future {
         match Identity::from_request(req, pl).into_inner() {
-            Ok(identity) => {
-                match identity.id() {
-                    Ok(user_json_str) => {
-                        match serde_json::from_str::<User>(&user_json_str) {
-                            Ok(user) => ready(Ok(user)),
-                            Err(e) => {
-                                eprintln!("Error deserializing user from identity: {:?}", e);
-                                ready(Err(ServiceError::Unauthorized.into()))
-                            }
-                        }
-                    },
+            Ok(identity) => match identity.id() {
+                Ok(user_json_str) => match serde_json::from_str::<User>(&user_json_str) {
+                    Ok(user) => ready(Ok(user)),
                     Err(e) => {
-                        eprintln!("Error fetching ID from identity: {:?}", e);
+                        eprintln!("Error deserializing user from identity: {:?}", e);
                         ready(Err(ServiceError::Unauthorized.into()))
                     }
+                },
+                Err(e) => {
+                    eprintln!("Error fetching ID from identity: {:?}", e);
+                    ready(Err(ServiceError::Unauthorized.into()))
                 }
             },
             Err(_) => {
@@ -54,7 +50,6 @@ impl FromRequest for LoggedUser {
     }
 }
 
-
 pub async fn logout(id: Identity) -> HttpResponse {
     id.logout();
     HttpResponse::NoContent().finish()
@@ -62,40 +57,41 @@ pub async fn logout(id: Identity) -> HttpResponse {
 
 pub async fn login(
     req: HttpRequest,
-    auth_data: web::Json<AuthData>,
-    pool: web::Data<Pool>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let user = web::block(move || query(auth_data.into_inner(), pool)).await??;
+    login_data: web::Json<AuthData>,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ServiceError> {
+    let login_data = login_data.into_inner();
+    let email = login_data.email;
+    let password = login_data.password;
 
-    //let user_string = user.user_id.to_string();
-    let user = serde_json::to_string(&user).unwrap();
-    Identity::login(&req.extensions(), user).unwrap();
-
-    Ok(HttpResponse::Ok().finish())
-}
-
-pub async fn get_me(user: Option<Identity>, logged_user: LoggedUser) -> HttpResponse {
-    HttpResponse::Ok().json(logged_user)
-}
-/// Diesel query for authentication
-fn query(auth_data: AuthData, pool: web::Data<Pool>) -> Result<User, ServiceError> {
-    use crate::schema::users::dsl::{email, users};
-
-    let mut conn = pool.get().unwrap();
-
-    let mut items = users
-        .filter(email.eq(&auth_data.email))
-        .load::<User>(&mut conn)?;
-
-    if let Some(user) = items.pop() {
-        if let Ok(matching) = verify(&user.hash, &auth_data.password) {
-            if matching {
-                return Ok(user.into());
-            } else {
-                return Err(ServiceError::BadRequest("Invalid password".into()));
-            }
+    match validate_user(&email, &password, pool.get_ref()).await {
+        Ok(user) => {
+            Identity::login(&req.extensions(), serde_json::to_string(&user).unwrap()).unwrap();
+            Ok(HttpResponse::Ok().json(user))
         }
+        Err(e) => Err(e.into()),
     }
+}
 
-    Err(ServiceError::Unauthorized)
+async fn validate_user(
+    username: &str,
+    password: &str,
+    pool: &PgPool,
+) -> Result<User, ServiceError> {
+    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+        .bind(username)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| ServiceError::InternalServerError)?
+        .ok_or(ServiceError::BadRequest("User not found".into()))?;
+
+    if verify(&user.hash, password)? {
+        Ok(user)
+    } else {
+        Err(ServiceError::BadRequest("Invalid password".into()))
+    }
+}
+
+pub async fn get_me(_user: Option<Identity>, logged_user: LoggedUser) -> HttpResponse {
+    HttpResponse::Ok().json(logged_user)
 }
