@@ -1,7 +1,12 @@
 <script>
     import { onMount, tick } from "svelte";
+
+    // Initialize state
     let email = "";
     let isAuth = false;
+    let error = null;
+    let profileExists = false;
+    let dataSaved = false;
     let user = {
         name: "",
         age: "",
@@ -24,7 +29,15 @@
         gym_or_home: "",
         equipment: [],
     };
+    $: user.favorite_exercises = user.favorite_exercises || [];
+    $: user.equipment = user.equipment || [];
+    $: user.exercise_blacklist = user.exercise_blacklist || [];
+    $: user.days_cant_train = user.days_cant_train || [];
 
+    // Static options
+    const genderOptions = ["Male", "Female", "Other"];
+    const heightUnits = ["cm", "ft"];
+    const weightUnits = ["kg", "lbs"];
     const equipmentOptions = [
         "Dumbbells",
         "Barbell",
@@ -33,10 +46,6 @@
         "Treadmill",
         "Stationary Bike",
     ];
-    let profileExists = false;
-    let dataSaved = false;
-    let error = null;
-
     const daysOfWeek = [
         "Monday",
         "Tuesday",
@@ -55,87 +64,89 @@
         "Crunches",
         "Lunges",
     ];
-    const genderOptions = ["Male", "Female", "Other"];
-    const heightUnits = ["cm", "ft"];
-    const weightUnits = ["kg", "lbs"];
 
-    const fetchAuthStatus = async () => {
-        try {
-            const response = await fetch("./api/auth"); // Updated to the get_me endpoint
-            if (response.ok) {
-                const user = await response.json();
-                isAuth = true; // The user is authenticated if the request was successful
-                email = user.email;
-            } else {
-                isAuth = false;
-                email = "";
-            }
-        } catch (error) {
-            console.error("Error fetching authentication status:", error);
-            isAuth = false;
-            username = "";
-        }
-    };
     onMount(async () => {
         await fetchAuthStatus();
-        await loadProfile();
+        if (isAuth) {
+            await loadProfile();
+        }
     });
+
+    // Authentication status fetch
+    async function fetchAuthStatus() {
+        try {
+            const response = await fetch("./api/auth");
+            if (response.ok) {
+                const userData = await response.json();
+                isAuth = true;
+                email = userData.email;
+            } else {
+                throw new Error("Authentication failed");
+            }
+        } catch (err) {
+            error = `Error fetching authentication status: ${err.message}`;
+            console.error(error);
+            isAuth = false;
+            email = "";
+        }
+    }
+
+    // Profile data fetch
     async function loadProfile() {
         try {
+            const authToken = localStorage.getItem("auth_token");
             const response = await fetch(`./api/profile/${email}`, {
                 method: "GET",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${localStorage.getItem(
-                        "auth_token"
-                    )}`,
+                    Authorization: `Bearer ${authToken}`,
                 },
             });
 
             if (!response.ok) {
-                throw new Error(await response.text()); // get and throw the error message
+                throw new Error(await response.text());
             }
 
             const userProfile = await response.json();
-            await tick();
-
-            console.log(userProfile);
-
-            user = { ...user, ...userProfile.data }; // spread the data from userProfile into user object
+            user = { ...user, ...userProfile.data };
             profileExists =
-                userProfile.data && Object.keys(userProfile.data).length > 0; // check if the profile exists based on data
+                userProfile.data && Object.keys(userProfile.data).length > 0;
         } catch (err) {
-            error = err.message; // set the error message
-            console.error(error); // print error message to console
+            error = `Error loading profile: ${err.message}`;
+            console.error(error);
         }
     }
 
+    // Profile save function
     async function saveProfile() {
-        console.log("Sending:", JSON.stringify({ program_data: user }));
-        const response = await fetch(`./api/profile/${email}`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
-            },
-            body: JSON.stringify({ program_data: user }),
-        });
+        try {
+            const authToken = localStorage.getItem("auth_token");
+            const response = await fetch(`./api/profile/${email}`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`,
+                },
+                body: JSON.stringify({ program_data: user }),
+            });
 
-        if (response.ok) {
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+
             const updatedUser = await response.json();
-            await tick();
             user = { ...user, ...updatedUser };
             profileExists = true;
             dataSaved = true;
-        } else {
-            error = await response.text(); // get error message
-            console.error(error); // print error message to console
+        } catch (err) {
+            error = `Error saving profile: ${err.message}`;
+            console.error(error);
             alert(error);
         }
     }
 </script>
 
-{#if user}
+{#if user && isAuth}
     <h2>You're logged in!</h2>
     {#if profileExists}
         {#if dataSaved}
@@ -225,7 +236,9 @@
         <label
             >Target Timeframe: <input
                 bind:value={user.target_timeframe}
-                placeholder="Enter your target timeframe"
+                type="number"
+                min="1"
+                placeholder="Enter your target timeframe in weeks"
             /></label
         >
         <label
@@ -297,7 +310,7 @@
         <button type="submit">Save</button>
     </form>
 {:else}
-    <p>Loading...</p>
+    <p>Please login before attempting to save a profile</p>
 {/if}
 
 <style>
@@ -335,5 +348,7 @@
     h3 {
         margin-top: 2em;
     }
+    p {
+        text-align: center;
+    }
 </style>
-

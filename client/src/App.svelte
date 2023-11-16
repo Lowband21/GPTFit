@@ -44,7 +44,7 @@
       const response = await fetch("./api/auth"); // Updated to the get_me endpoint
       if (response.ok) {
         const user = await response.json();
-        console.log(user);
+        //console.log(user);
         isAuth = true; // The user is authenticated if the request was successful
         username = user.email;
       } else {

@@ -88,7 +88,7 @@ pub struct FitnessProfile {
     pub fitness_level: Option<String>,
     pub injuries: Option<String>,
     pub fitness_goal: Option<String>,
-    pub target_timeframe: Option<String>,
+    pub target_timeframe: Option<i32>,
     pub challenges: Option<String>,
     pub exercise_blacklist: Option<serde_json::Value>,
     pub frequency: Option<i32>,

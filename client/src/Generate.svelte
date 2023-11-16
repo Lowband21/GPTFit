@@ -2,7 +2,6 @@
   import { writable, derived, get } from "svelte/store";
   import { onMount } from "svelte";
 
-
   let email = "";
   let isAuth = false;
   let generatedText = "";
@@ -75,7 +74,6 @@
     if (response.ok) {
       const api_response = await response.json();
       prompt.set(api_response.data);
-      console.log("prompt:", prompt); // Add this line
     } else {
       error = "Failed to load user profile.";
     }
@@ -88,19 +86,18 @@
 </script>
 
 <div class="container">
-  <h1>Your Custom Workout Plan</h1>
+  <h1>Program Generator</h1>
   {#if error}
     <div class="error">{error}</div>
   {:else if isLoading}
     <div>Loading...</div>
-  {:else}
-    {#if isAuth}
-      <textarea bind:value={$prompt} class="text-area" />
-    {:else}
-      <p>Loading user data...</p>
-    {/if}
+  {:else if isAuth}
+    <textarea bind:value={$prompt} class="text-area" />
     <button class="generate-btn" on:click={generateText}>Generate</button>
     <pre>{generatedText}</pre>
+  {:else}
+    <p>Please login before attempting to generate</p>
+    <p />
   {/if}
 </div>
 

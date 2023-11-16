@@ -24,8 +24,9 @@
                 Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
             },
         });
-        //console.log(await res.json());
-        responses = await res.json();
+        if (res.ok) {
+            responses = await res.json();
+        }
     });
 </script>
 

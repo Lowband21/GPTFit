@@ -29,13 +29,13 @@
             auth.set({ isAuth: true, username: email });
             loggedIn = true;
             successMessage = "Logged in successfully!";
+            auth.set({ isAuth: true, username: email });
+            loggedIn = true;
+            localStorage.setItem("auth_token", data.auth_token);
         }
 
         const data = await response.text();
         console.log(data);
-        auth.set({ isAuth: true, username: email });
-        loggedIn = true;
-        localStorage.setItem("auth_token", data.auth_token);
     }
 </script>
 
