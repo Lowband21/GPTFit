@@ -1,7 +1,7 @@
-use crate::utils::verify;
+
 use crate::{
     errors::ServiceError,
-    models::{FitnessProfile, NewGeneratedText, NewUserProfile, User},
+    models::{FitnessProfile, NewUserProfile, User},
 };
 use actix_identity::Identity;
 use actix_web::{web, Error as ActixError, HttpResponse};
@@ -9,7 +9,7 @@ use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::{PgPool, Row};
-use uuid::Uuid;
+
 
 #[derive(Serialize)]
 struct ApiResponse<T> {
@@ -228,7 +228,7 @@ impl FitnessProgram {
 
         // Construct and return the FitnessProgram
         FitnessProgram {
-            macrocycle: macrocycle,
+            macrocycle,
         }
     }
 }
@@ -356,7 +356,7 @@ pub fn profile_to_prompt(profile: &FitnessProfile) -> String {
 pub async fn get_user_profile(
     identity_opt: Option<Identity>,
     pool: web::Data<PgPool>,
-    user_email: web::Path<String>,
+    _user_email: web::Path<String>,
 ) -> HttpResponse {
     println!("Getting user profile");
 
@@ -430,7 +430,8 @@ pub async fn get_profile(
         },
         Err(err) => {
             println!("User profile not found with error {}, returning default", err);
-            let profile = FitnessProfile {
+            
+            FitnessProfile {
                 name: Some("TestUser".to_string()),
                 age: Some(20),
                 height: Some(6.),
@@ -451,8 +452,7 @@ pub async fn get_profile(
                 gym_or_home: Some("Gym".to_string()),
                 favorite_exercises: None,
                 equipment: None,
-            };
-            profile
+            }
         }
     }
     
@@ -461,7 +461,7 @@ pub async fn get_profile(
 pub async fn save_user_profile(
     identity_opt: Option<Identity>,
     pool: web::Data<PgPool>,
-    user_email: web::Path<String>,
+    _user_email: web::Path<String>,
     updated_profile: web::Json<NewUserProfile>,
 ) -> HttpResponse {
     println!("Saving user profile");
@@ -865,7 +865,7 @@ pub async fn generate(
     println!("Generated program: {:#?}", program);
 
     sqlx::query("INSERT INTO fitness_programs (user_id, program_data) VALUES ($1, $2)")
-        .bind(&user_id)
+        .bind(user_id)
         .bind(
             serde_json::from_str::<Json<FitnessProgram>>(
                 serde_json::to_string(&program)
@@ -924,7 +924,10 @@ pub async fn get_responses(
                 responses, user.user_id
             );
 
-            Ok(HttpResponse::Ok().json(responses.reverse()))
+            Ok({
+                responses.reverse();
+                HttpResponse::Ok().json(())
+            })
         } else {
             Ok(HttpResponse::Unauthorized().json("User not logged in"))
         }

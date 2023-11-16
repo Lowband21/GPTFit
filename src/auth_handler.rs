@@ -5,11 +5,11 @@ use actix_web::{
     dev::Payload, web, Error, FromRequest, HttpMessage as _, HttpRequest, HttpResponse,
 };
 use serde::Deserialize;
-use sqlx::{PgPool, Pool};
+use sqlx::{PgPool};
 
 use crate::{
     errors::ServiceError,
-    models::{SlimUser, User},
+    models::{User},
     utils::verify,
 };
 
@@ -69,7 +69,7 @@ pub async fn login(
             Identity::login(&req.extensions(), serde_json::to_string(&user).unwrap()).unwrap();
             Ok(HttpResponse::Ok().json(user))
         }
-        Err(e) => Err(e.into()),
+        Err(e) => Err(e),
     }
 }
 

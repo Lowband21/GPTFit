@@ -1,13 +1,13 @@
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use dotenv::dotenv;
-use sqlx::migrate::Migrator;
-use sqlx::PgConnection;
-use sqlx::Pool;
+
+
+
 use std::env;
 
 use actix_identity::IdentityMiddleware;
-use actix_session::{storage::RedisSessionStore, Session, SessionMiddleware};
+use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 
 mod auth_handler;

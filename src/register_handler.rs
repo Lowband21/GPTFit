@@ -49,10 +49,10 @@ async fn query(username: String, password: String, pool: &PgPool) -> Result<User
             sqlx::query(
                 "INSERT INTO users (user_id, email, hash, created_at) VALUES ($1, $2, $3, $4)",
             )
-            .bind(&user.user_id)
+            .bind(user.user_id)
             .bind(&user.email)
             .bind(&user.hash)
-            .bind(&user.created_at)
+            .bind(user.created_at)
             .execute(pool)
             .await
             .map_err(|err| {
