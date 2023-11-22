@@ -25,7 +25,10 @@
             },
         });
         if (res.ok) {
+            //console.log(res.body);
             responses = await res.json();
+        } else {
+            console.log(res);
         }
     });
 </script>

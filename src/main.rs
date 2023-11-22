@@ -2,18 +2,18 @@ use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use dotenv::dotenv;
 
-
-
 use std::env;
 
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 
+mod api_responses;
 mod auth_handler;
 mod errors;
 mod gen_handlers;
 mod models;
+mod profile_handlers;
 mod register_handler;
 mod utils;
 
@@ -56,12 +56,12 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/api")
                     .service(
                         web::resource("/profile/{user_email}")
-                            .route(web::post().to(gen_handlers::save_user_profile))
-                            .route(web::get().to(gen_handlers::get_user_profile)),
+                            .route(web::post().to(profile_handlers::save_user_profile))
+                            .route(web::get().to(profile_handlers::get_user_profile)),
                     )
                     .service(
                         web::resource("/prompt")
-                            .route(web::get().to(gen_handlers::get_user_program_prompt)),
+                            .route(web::get().to(profile_handlers::get_user_program_prompt)),
                     )
                     .service(
                         web::resource("/response/{id}")
@@ -76,8 +76,25 @@ async fn main() -> std::io::Result<()> {
                             .route(web::post().to(register_handler::register_user)),
                     )
                     .service(
-                        web::resource("/generate").route(web::post().to(gen_handlers::generate)),
+                        web::resource("/generate_meso_summary")
+                            .route(web::post().to(gen_handlers::generate_meso_summary)),
                     )
+                    .service(
+                        web::resource("/generate_weeks")
+                            .route(web::post().to(gen_handlers::generate_weeks)),
+                    )
+                    .service(
+                        web::resource("/regenerate_exercises")
+                            .route(web::post().to(gen_handlers::generate_exercises_route)),
+                    )
+                    //.service(
+                    //    web::resource("/regenerate_exercises")
+                    //        .route(web::post().to(gen_handlers::regenerate_exercises)),
+                    //)
+                    //.service(
+                    //    web::resource("/regenerate_notes")
+                    //        .route(web::post().to(gen_handlers::regenerate_notes)),
+                    //)
                     .service(
                         web::resource("/auth")
                             .route(web::post().to(auth_handler::login))
@@ -104,7 +121,7 @@ async fn main() -> std::io::Result<()> {
     })
     .bind(format!(
         "0.0.0.0:{}",
-        env::var("PORT").unwrap_or_else(|_| "5001".to_string())
+        env::var("PORT").unwrap_or_else(|_| "5000".to_string())
     ))?
     .run()
     .await

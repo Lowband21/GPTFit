@@ -1,239 +1,20 @@
-
 use crate::{
     errors::ServiceError,
-    models::{FitnessProfile, NewUserProfile, User},
+    models::{Exercises, FitnessProgram, Info, Mesocycle, User, Week},
 };
 use actix_identity::Identity;
-use actix_web::{web, Error as ActixError, HttpResponse};
+use actix_web::{web, Error as ActixError, HttpResponse, Result};
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
-use sqlx::{PgPool, Row};
-
-
-#[derive(Serialize)]
-struct ApiResponse<T> {
-    data: Option<T>,
-    error: Option<String>,
-}
-
+use sqlx::PgPool;
 use std::collections::HashMap;
 
+use crate::api_responses::*;
+use crate::profile_handlers::*;
 use sqlx::FromRow;
-#[derive(FromRow, Debug)]
-pub struct FitnessProfileResponse {
-    id: i32,
-    user_id: i32,
-    profile_data: Json<FitnessProfile>,
-}
-#[derive(FromRow)]
-pub struct FitnessProgramResponse {
-    id: i32,
-    fitness_program: Json<FitnessProgram>,
-}
-#[derive(Serialize, Deserialize, Debug)]
-pub struct FitnessProgram {
-    macrocycle: HashMap<String, Mesocycle>, // Structure similar to mesocycle
-}
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Mesocycle {
-    weeks: Option<HashMap<String, Week>>,
-    goals: Option<Vec<TrainingFocus>>,
-    exercises: Option<Exercises>,
-    periodization_model: Option<PeriodizationModel>,
-    notes: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum TrainingFocus {
-    Strength,
-    Power,
-    Endurance,
-    FatLoss,
-    Hypertrophy,
-    Skill,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum EquipmentType {
-    Barbell,
-    Dumbbell,
-    Machine,
-    WeightedBodyweight,
-    AssistedBodyweight,
-    RepsOnly,
-    Cardio,
-    Duration,
-    Cable,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum MuscleGroup {
-    Back,
-    Abs,
-    Traps,
-    Triceps,
-    Forearms,
-    Calves,
-    FrontDelts,
-    Glutes,
-    Chest,
-    Biceps,
-    Quads,
-    Hamstrings,
-    SideDelts,
-    RearDelts,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum PeriodizationModel {
-    Linear,
-    Undulating,
-    Block,
-    Conjugate,
-    Polarized,
-    ReverseLinear,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Exercises(Vec<Exercise>);
-#[derive(Debug, Serialize, Deserialize)]
-struct MuscleGroups(Vec<MuscleGroup>);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Exercise {
-    name: String,
-    equipment_type: EquipmentType,
-    muscle_groups: Vec<MuscleGroup>,
-}
-
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Week {
-    days: Vec<Day>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Day {
-    rest_day: Option<bool>,
-    exercises: Option<HashMap<String, ProgrammedExercise>>,
-    notes: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct ProgrammedExercise {
-    name: String,
-    sets: i32,
-    rep_range_min: Option<i32>,
-    rep_range_max: Option<i32>,
-    rpe: Option<i32>,      // Optional
-    duration: Option<String>, // Optional
-    notes: Option<String>,    // Optional
-}
-
-impl FitnessProgram {
-    pub fn to_user_friendly_string(&self) -> String {
-        let mut output = String::new();
-
-        for (mesocycle_name, mesocycle) in &self.macrocycle {
-            output.push_str(&format!("Mesocycle: {}\n", mesocycle_name));
-            
-            // Add mesocycle goals, exercises, periodization model, and notes if available
-            if let Some(goals) = &mesocycle.goals {
-                let goals_str = goals.iter().map(|g| format!("{:?}", g)).collect::<Vec<_>>().join(", ");
-                output.push_str(&format!("  Goals: {}\n", goals_str));
-            }
-            if let Some(exercises) = &mesocycle.exercises {
-                // Handle mesocycle-level exercises
-                for exercise in &exercises.0 {
-                    output.push_str(&format!("  Exercise: {}\n", exercise.name));
-                }
-            }
-            if let Some(model) = &mesocycle.periodization_model {
-                output.push_str(&format!("  Periodization Model: {:?}\n", model));
-            }
-            if let Some(notes) = &mesocycle.notes {
-                output.push_str(&format!("  Notes: {}\n", notes));
-            }
-
-            if let Some(weeks) = &mesocycle.weeks {
-                for (week_name, week) in weeks {
-                    output.push_str(&format!("    Week: {}\n", week_name));
-                    for (i, day) in week.days.iter().enumerate() {
-                        if day.rest_day.unwrap_or(false) {
-                            output.push_str(&format!("      Day {}: Rest Day\n", i));
-                        } else {
-                            output.push_str(&format!("      Day {}:\n", i));
-                            if let Some(exercises) = &day.exercises {
-                                for (_exercise_name, exercise) in exercises {
-                                    output.push_str(&format!("        Exercise: {}\n", exercise.name));
-                                    output.push_str(&format!("          Sets: {}\n", exercise.sets));
-                                    if let (Some(min), Some(max)) =
-                                        (exercise.rep_range_min, exercise.rep_range_max)
-                                    {
-                                        output.push_str(&format!("          Reps: {}-{}\n", min, max));
-                                    }
-                                    if let Some(rpe) = &exercise.rpe {
-                                        output.push_str(&format!("          RPE: {}\n", rpe));
-                                    }
-                                    if let Some(duration) = &exercise.duration {
-                                        output.push_str(&format!("          Duration: {}\n", duration));
-                                    }
-                                    if let Some(notes) = &exercise.notes {
-                                        output.push_str(&format!("          Notes: {}\n", notes));
-                                    }
-                                }
-                            }
-                        }
-                        if let Some(notes) = &day.notes {
-                            output.push_str(&format!("        Notes: {}\n", notes));
-                        }
-                    }
-                }
-            }
-        }
-
-        output
-    }
-
-    fn from_meso(meso: Mesocycle) -> FitnessProgram {
-        let mut macrocycle = HashMap::new();
-        macrocycle.insert("01".to_string(), meso);
-
-        FitnessProgram {
-            macrocycle
-        }
-    }
-
-    fn from_week(week: Week) -> FitnessProgram {
-        // Create an empty mesocycle
-        let mut mesocycle = Mesocycle {
-            weeks: None,
-            goals: None,
-            periodization_model: None,
-            exercises: None,
-            notes: None,
-        };
-
-        // Insert the provided week into the mesocycle
-        // Assuming a naming convention for the week, e.g., "Week 1"
-        let mut weeks = HashMap::new();
-        weeks.insert("01".to_string(), week);
-        mesocycle.weeks = Some(weeks);
-
-        // Create a macrocycle with the single mesocycle
-        let mut macrocycle = HashMap::new();
-        macrocycle.insert("Mesocycle 01".to_string(), mesocycle);
-
-        // Construct and return the FitnessProgram
-        FitnessProgram {
-            macrocycle,
-        }
-    }
-}
-
-fn get_user(identity: &Identity) -> AnyResult<User> {
+pub fn get_user(identity: &Identity) -> AnyResult<User> {
     match identity.id() {
         Ok(user_json_str) => serde_json::from_str::<User>(&user_json_str).map_err(|e| {
             eprintln!("Error deserializing user from identity: {:?}", e);
@@ -246,282 +27,33 @@ fn get_user(identity: &Identity) -> AnyResult<User> {
     }
 }
 
-pub async fn get_user_program_prompt(
-    identity_opt: Option<Identity>,
-    pool: web::Data<PgPool>,
-) -> HttpResponse {
-    let user_id = match identity_opt {
-        Some(id) => match get_user(&id) {
-            Ok(user) => user.user_id,
-            Err(_) => -1,
-        },
-        None => -1,
-    };
-
-    let user_profile = sqlx::query_as::<_, FitnessProfileResponse>(
-        "SELECT * FROM fitness_profiles"
-    )
-    .bind(user_id)
-    .fetch_one(pool.get_ref())
-    .await;
-
-    match user_profile {
-        Ok(profile) =>{
-            let data = profile_to_prompt(&profile.profile_data.0);
-            println!("Sending prompt: {}", data);
-            HttpResponse::Ok().json(ApiResponse {
-                data: Some(data),
-                error: None,
-            })
-        },
-        Err(err) => {
-            HttpResponse::InternalServerError().json(ApiResponse::<String> {
-                data: None,
-                error: Some(format!("Error updating program: {}", err)),
-            })
-        }
-    }
-}
-
-pub fn profile_to_prompt(profile: &FitnessProfile) -> String {
-    let mut prompt = String::from("Create a fitness program");
-
-    if let Some(name) = &profile.name {
-        prompt.push_str(&format!(" for {}", name));
-    }
-
-    if let Some(age) = profile.age {
-        prompt.push_str(&format!(", age: {}", age));
-    }
-
-    if let Some(height) = profile.height {
-        prompt.push_str(&format!(", height: {} {}", height, profile.height_unit));
-    }
-
-    if let Some(weight) = profile.weight {
-        prompt.push_str(&format!(", weight: {} {}", weight, profile.weight_unit));
-    }
-
-    if let Some(gender) = &profile.gender {
-        prompt.push_str(&format!(", gender: {}", gender));
-    }
-
-    if let Some(years) = profile.years_trained {
-        prompt.push_str(&format!(", years trained: {}", years));
-    }
-
-    if let Some(level) = &profile.fitness_level {
-        prompt.push_str(&format!(", fitness level: {}", level));
-    }
-
-    if let Some(injuries) = &profile.injuries {
-        prompt.push_str(&format!(", injuries: {}", injuries));
-    }
-
-    if let Some(goal) = &profile.fitness_goal {
-        prompt.push_str(&format!(", goal: {}", goal));
-    }
-
-    if let Some(timeframe) = &profile.target_timeframe {
-        prompt.push_str(&format!(", timeframe: {} weeks", timeframe));
-    }
-
-    if let Some(challenges) = &profile.challenges {
-        prompt.push_str(&format!(", challenges: {}", challenges));
-    }
-
-    if let Some(frequency) = profile.frequency {
-        prompt.push_str(&format!(", training frequency per week: {}", frequency));
-    }
-
-    if let Some(duration) = profile.preferred_workout_duration {
-        prompt.push_str(&format!(", preferred workout duration: {} minutes", duration));
-    }
-
-    if let Some(setting) = &profile.gym_or_home {
-        prompt.push_str(&format!(", setting: {}", setting));
-    }
-
-    // Handle JSON fields like exercise_blacklist, favorite_exercises, equipment, etc.
-    // Example for exercise_blacklist:
-    if let Some(blacklist) = &profile.exercise_blacklist {
-        prompt.push_str(&format!(", exercise blacklist: {}", blacklist));
-    }
-
-    // Similar handling for favorite_exercises and equipment
-
-    prompt
-}
-
-pub async fn get_user_profile(
-    identity_opt: Option<Identity>,
-    pool: web::Data<PgPool>,
-    _user_email: web::Path<String>,
-) -> HttpResponse {
-    println!("Getting user profile");
-
-    let user_id = match identity_opt {
-        Some(id) => match get_user(&id) {
-            Ok(user) => user.user_id,
-            Err(_) => -1,
-        },
-        None => -1,
-    };
-
-    let user_profile = sqlx::query_as::<_, FitnessProfileResponse>(
-        "SELECT * FROM fitness_profiles"
-    )
-    .bind(user_id)
-    .fetch_one(pool.get_ref())
-    .await;
-
-    match user_profile {
-        Ok(profile) => HttpResponse::Ok().json(ApiResponse {
-            data: Some(profile.profile_data),
-            error: None,
-        }),
-        Err(err) => {
-            println!("User profile not found with error {}, returning default", err);
-            let profile = FitnessProfile {
-                name: Some("TestUser".to_string()),
-                age: Some(20),
-                height: Some(6.),
-                height_unit: "ft".to_string(),
-                weight: Some(180.),
-                weight_unit: "lbs".to_string(),
-                gender: Some("male".to_string()),
-                years_trained: Some(2),
-                fitness_level: Some("beginner".to_string()),
-                injuries: None,
-                fitness_goal: None,
-                target_timeframe: None,
-                challenges: None,
-                exercise_blacklist: None,
-                frequency: Some(5),
-                days_cant_train: None,
-                preferred_workout_duration: Some(50),
-                gym_or_home: Some("Gym".to_string()),
-                favorite_exercises: None,
-                equipment: None,
-            };
-            HttpResponse::Ok().json(ApiResponse {
-                data: Some(profile),
-                error: None,
-            })
-        }
-    }
-}
-
-pub async fn get_profile(
-    user_id: i32,
-    pool: &PgPool,
-    ) -> FitnessProfile {
-
-    let user_profile = sqlx::query_as::<_, FitnessProfileResponse>(
-        "SELECT * FROM fitness_profiles"
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await;
-
-    match user_profile {
-        Ok(profile) => {
-            profile.profile_data.0
-        },
-        Err(err) => {
-            println!("User profile not found with error {}, returning default", err);
-            
-            FitnessProfile {
-                name: Some("TestUser".to_string()),
-                age: Some(20),
-                height: Some(6.),
-                height_unit: "ft".to_string(),
-                weight: Some(180.),
-                weight_unit: "lbs".to_string(),
-                gender: Some("male".to_string()),
-                years_trained: Some(2),
-                fitness_level: Some("beginner".to_string()),
-                injuries: None,
-                fitness_goal: None,
-                target_timeframe: None,
-                challenges: None,
-                exercise_blacklist: None,
-                frequency: Some(5),
-                days_cant_train: None,
-                preferred_workout_duration: Some(50),
-                gym_or_home: Some("Gym".to_string()),
-                favorite_exercises: None,
-                equipment: None,
-            }
-        }
-    }
-    
-}
-
-pub async fn save_user_profile(
-    identity_opt: Option<Identity>,
-    pool: web::Data<PgPool>,
-    _user_email: web::Path<String>,
-    updated_profile: web::Json<NewUserProfile>,
-) -> HttpResponse {
-    println!("Saving user profile");
-
-    let user_id = match identity_opt {
-        Some(id) => match get_user(&id) {
-            Ok(user) => user.user_id,
-            Err(_) => -1,
-        },
-        None => -1,
-    };
-
-    let current_profile_opt = sqlx::query_as::<_, FitnessProfileResponse>("SELECT * FROM fitness_profiles").bind(user_id).fetch_optional(pool.get_ref()).await;
-
-    let update_result = if let Ok(Some(current_profile)) = current_profile_opt {
-        println!("Existing user profile {:#?}", current_profile);
-        println!("Updated existing user profile");
-        sqlx::query!("UPDATE fitness_profiles SET profile_data = $1 WHERE user_id = $2",
-            updated_profile.program_data,user_id)
-            .execute(pool.get_ref())
-            .await
-    } else {
-        println!("Created new user profile");
-        sqlx::query!("INSERT INTO fitness_profiles (user_id, profile_data) VALUES ($1, $2)",
-            user_id, updated_profile.program_data)
-            .execute(pool.get_ref())
-            .await
-        
-    };
-
-    // Update the fitness_programs table
-
-    match update_result {
-                Ok(_) => {
-                    println!("Program updated successfully");
-                    HttpResponse::Ok().json(ApiResponse {
-                    data: Some("Program updated successfully".to_string()),
-                    error: None,
-                })}
-                ,
-                Err(err) => {
-                    println!("Failed to update program");
-                    HttpResponse::InternalServerError().json(ApiResponse::<String> {
-                    data: None,
-                    error: Some(format!("Error updating program: {}", err)),
-                })},
-            }
-}
-
 use openai_api_rust::chat::*;
-use openai_api_rust::*;
 use openai_api_rust::completions::Completion;
+use openai_api_rust::*;
 use tokio::time::{sleep, Duration};
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PromptWithId {
+    pub id: i32,
+    pub prompt: String,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProgramWithId {
+    pub id: i32,
+    pub program: FitnessProgram,
+    pub prompt: String,
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Prompt {
     pub prompt: String,
 }
 
 fn create_chat_body(messages: Vec<Message>) -> ChatBody {
+    //let mut logit_bias = HashMap::new();
+    //logit_bias.insert("5501".to_string(), "-100".to_string());
+    //logit_bias.insert("4213".to_string(), "-100".to_string());
+    //logit_bias.insert("14295".to_string(), "-100".to_string());
+    //logit_bias.insert("747".to_string(), "-100".to_string());
     ChatBody {
         model: "gpt-4-1106-preview".to_string(), // Update the model as needed
         max_tokens: None,
@@ -544,7 +76,7 @@ fn create_chat_body(messages: Vec<Message>) -> ChatBody {
 fn create_system_messages_for_meso_summary() -> Vec<Message> {
     let sys_message = Message {
         role: Role::System,
-        content: "You are an AI generating a summary for a fitness mesocycle. Please provide goals, every exercise to be performed during the meso, periodization model, and notes in the following JSON format. Ensure you generate enough exercises to program an entire mesocycle".to_string(),
+        content: "You are an AI generating a summary for a fitness mesocycle. Please provide goals, the periodization model, and notes in the following JSON format.".to_string(),
     };
 
     let mut messages_for_api: Vec<Message> = vec![sys_message];
@@ -585,44 +117,55 @@ fn create_system_messages_for_meso_summary() -> Vec<Message> {
     };
     messages_for_api.push(sys_message);
 
-
     messages_for_api
 }
 
-fn create_user_message(prompt: &Prompt) -> Message {
+fn create_user_message(prompt: String) -> Message {
     Message {
         role: Role::User,
-        content: prompt.prompt.clone(),
+        content: prompt,
     }
 }
 
 fn parse_mesocycle_from_response(response: Completion) -> Mesocycle {
     // Assuming the response is in a compatible JSON format
-    serde_json::from_str(response.choices.get(0)
-        .and_then(|choice| choice.message.as_ref())
-        .expect("Invalid response format")
-        .content.as_str())
-        .expect("Error parsing JSON to Mesocycle")
+    serde_json::from_str(
+        response
+            .choices
+            .get(0)
+            .and_then(|choice| choice.message.as_ref())
+            .expect("Invalid response format")
+            .content
+            .as_str(),
+    )
+    .expect("Error parsing JSON to Mesocycle")
 }
 
-fn parse_exercises_from_response(response: Completion) -> Vec<Exercise> {
+fn parse_exercises_from_response(response: Completion) -> Exercises {
     // Parsing the exercise list from the response
-    serde_json::from_str(response.choices.get(0)
-        .and_then(|choice| choice.message.as_ref())
-        .expect("Invalid response format")
-        .content.as_str())
-        .expect("Error parsing JSON to Exercise list")
+    serde_json::from_str(
+        response
+            .choices
+            .get(0)
+            .and_then(|choice| choice.message.as_ref())
+            .expect("Invalid response format")
+            .content
+            .as_str(),
+    )
+    .expect("Error parsing JSON to Exercise list")
 }
 
 fn create_system_messages_for_exercise_generation(meso: &Mesocycle) -> Vec<Message> {
     let mut messages: Vec<Message> = vec![];
     let intro_message = Message {
         role: Role::System,
-        content: "Generate a list of exercises for a fitness mesocycle, including equipment type and muscle groups.".to_string(),
+        content: "Generate a list of exercises for a fitness mesocycle, including equipment type and muscle groups. \
+            Do not include the users information in your response.\
+            Ensure you generate enough exercises to program an entire mesocycle.".to_string(),
     };
     let meso_message = Message {
         role: Role::System,
-        content: format!("The following are the decisions made about the mesocycle so far: {:#?}", meso),
+        content: format!("The following are the decisions made about the mesocycle so far, do not include any of this information in your response, but use it to inform your selection: {:#?}", meso),
     };
     let options_message = Message {
         role: Role::System,
@@ -641,7 +184,7 @@ fn create_system_messages_for_exercise_generation(meso: &Mesocycle) -> Vec<Messa
             Cable: Exercises utilzing a cable machine
 
         Muscle Groups: These are the target muscle groups for each exercise. Options include:
-            Back, Abs, Traps, Triceps, Forearms, Calves, FrontDelts, Glutes, Chest, Biceps, Quads, Hamstrings, SideDelts, RearDelts.
+            Back, Abs, Traps, Triceps, Forearms, Calves, FrontDelts, Glutes, Chest, Biceps, Quads, Hamstrings, SideDelts, RearDelts, LowerBack. // Select only from these options! Core and Obliques are both in the Abs category.
             Each muscle group should be targeted appropriately based on the exercise and equipment.
             "#
             .to_string()
@@ -649,8 +192,9 @@ fn create_system_messages_for_exercise_generation(meso: &Mesocycle) -> Vec<Messa
     let format_message = Message {
         role: Role::System,
         content: r#"
-            "exercises": [
-              {  // Exercise index, can be replaced with any unique identifier
+            Include these fields and only these fields: 
+            "exercises": [ // Note that exercises is an array
+              { 
                 "name": "Bench Press",
                 "equipment_type": "Barbell", // Only valid equipment types
                 "muscle_groups": ["Chest", "Triceps"] // Only valid muscle groups
@@ -662,7 +206,8 @@ fn create_system_messages_for_exercise_generation(meso: &Mesocycle) -> Vec<Messa
               }
               // ... Additional exercises ...
             ],
-            "#.to_string()
+            "#
+        .to_string(),
     };
     messages.push(intro_message);
     messages.push(meso_message);
@@ -670,34 +215,149 @@ fn create_system_messages_for_exercise_generation(meso: &Mesocycle) -> Vec<Messa
     messages.push(format_message);
     messages
 }
-
-pub fn generate_meso_summary(prompt: &Prompt, openai: &OpenAI) -> Mesocycle {
-    let mut messages = create_system_messages_for_meso_summary();
-    let user_message = create_user_message(prompt);
-    messages.push(user_message);
-
-    let body = create_chat_body(messages);
-
-    let response = openai.chat_completion_create(&body).expect("Error handling is needed here");
-    let mut meso = parse_mesocycle_from_response(response);
-    meso.exercises = Some(Exercises(generate_exercises(prompt, openai, &meso)));
-    meso
-}
-pub fn generate_exercises(prompt: &Prompt, openai: &OpenAI, meso: &Mesocycle) -> Vec<Exercise> {
-    let mut messages = create_system_messages_for_exercise_generation(meso);
-    let user_message = create_user_message(prompt);
-    messages.push(user_message);
-    let body = create_chat_body(messages);
-
-    let response = openai.chat_completion_create(&body).expect("Error handling is needed here");
-    parse_exercises_from_response(response)
+#[derive(FromRow)]
+pub struct Id {
+    id: i32,
 }
 
-
-pub async fn generate(
+pub async fn generate_meso_summary(
     identity_opt: Option<Identity>,
     pool: web::Data<PgPool>,
-    msg: web::Json<Prompt>,
+    prompt: web::Json<Prompt>,
+) -> Result<HttpResponse, ActixError> {
+    let auth = Auth::from_env().unwrap();
+    let openai = OpenAI::new(auth, "https://api.openai.com/v1/");
+
+    let user_id = match identity_opt {
+        Some(id) => match get_user(&id) {
+            Ok(user) => user.user_id,
+            Err(_) => -1,
+        },
+        None => -1,
+    };
+
+    let mut messages = create_system_messages_for_meso_summary();
+    let user_message = create_user_message(prompt.0.prompt.clone());
+    messages.push(user_message);
+
+    let body = create_chat_body(messages);
+
+    let response = openai
+        .chat_completion_create(&body)
+        .expect("Error handling is needed here");
+    dbg!(
+        response
+            .choices
+            .get(0)
+            .unwrap()
+            .message
+            .clone()
+            .unwrap()
+            .content
+    );
+    let mut meso = parse_mesocycle_from_response(response);
+    meso.exercises = Some(generate_exercises(&prompt.0, &openai, &meso));
+    println!("Meso Summary: {:#?}", meso);
+    let program = FitnessProgram::from_meso(meso);
+
+    let id = sqlx::query_as::<_, Id>(
+        "INSERT INTO fitness_programs (user_id, program_data) VALUES ($1, $2) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(
+        serde_json::from_str::<Json<FitnessProgram>>(
+            serde_json::to_string(&program).unwrap().as_str(),
+        )
+        .unwrap(),
+    )
+    .fetch_one(pool.get_ref())
+    .await
+    .map_err(|err| {
+        eprintln!("Error during program insertion: {:?}", err);
+        println!("eprintln should have output something directly above");
+        ServiceError::InternalServerError
+    })?
+    .id;
+    println!("Json Converted Program: {:#?}", Json(program.clone()));
+    let program_response = ProgramSummaryResponse {
+        id,
+        fitness_program: sqlx::types::Json(program),
+    };
+    Ok(HttpResponse::Ok().json(program_response))
+}
+
+pub async fn get_program(pool: &PgPool, id: i32, user_id: i32) -> FitnessProgram {
+    sqlx::query_as::<_, FitnessProgramResponse>(
+        "SELECT * FROM fitness_programs WHERE user_id = $1 AND id = $2",
+    )
+    .bind(user_id)
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .map_err(|err| {
+        eprintln!("Error during program retreval: {:?}", err);
+        ServiceError::InternalServerError
+    })
+    .unwrap()
+    .program_data
+    .0
+}
+pub fn generate_exercises(prompt: &Prompt, openai: &OpenAI, meso: &Mesocycle) -> Exercises {
+    let mut messages = create_system_messages_for_exercise_generation(meso);
+    let user_message = create_user_message(prompt.prompt.clone());
+    messages.push(user_message);
+    let body = create_chat_body(messages);
+
+    let response = openai
+        .chat_completion_create(&body)
+        .expect("Error handling is needed here");
+    dbg!(
+        response
+            .choices
+            .get(0)
+            .unwrap()
+            .message
+            .clone()
+            .unwrap()
+            .content
+    );
+    parse_exercises_from_response(response)
+}
+pub async fn generate_exercises_route(
+    identity_opt: Option<Identity>,
+    pool: web::Data<PgPool>,
+    msg: web::Json<ProgramWithId>,
+) -> Result<HttpResponse, ActixError> {
+    let auth = Auth::from_env().unwrap();
+    let openai = OpenAI::new(auth, "https://api.openai.com/v1/");
+
+    let meso = msg.0.program.macrocycle.get("01").unwrap();
+
+    let mut messages = create_system_messages_for_exercise_generation(meso);
+    let user_message = create_user_message(msg.prompt.clone());
+    messages.push(user_message);
+    let body = create_chat_body(messages);
+
+    let response = openai
+        .chat_completion_create(&body)
+        .expect("Error handling is needed here");
+    dbg!(
+        response
+            .choices
+            .get(0)
+            .unwrap()
+            .message
+            .clone()
+            .unwrap()
+            .content
+    );
+    Ok(HttpResponse::Ok().json(parse_exercises_from_response(response)))
+}
+
+pub async fn generate_weeks(
+    identity_opt: Option<Identity>,
+    pool: web::Data<PgPool>,
+    msg: web::Json<ProgramWithId>,
 ) -> Result<HttpResponse, ActixError> {
     println!("In Chat with message: {:?}", msg);
 
@@ -712,16 +372,9 @@ pub async fn generate(
         None => -1,
     };
 
-    let mut meso = generate_meso_summary(&msg.0, &openai);
+    //let mut program = get_program(pool.get_ref(), msg.id, user_id).await;
+    let mut program = msg.program.clone();
     let profile = get_profile(user_id, pool.get_ref()).await;
-    //let mut meso = Mesocycle{
-    //    weeks: None,
-    //    goals: None,
-    //    exercises: None,
-    //    periodization_model: None,
-    //    notes: None,
-    //};
-
 
     // List to store messages for API
     let mut messages_for_api: Vec<Message> = Vec::new();
@@ -735,7 +388,10 @@ pub async fn generate(
 
     let sys_message = Message {
         role: Role::System,
-        content: format!("These are the parameters of the Mesocycle: {:#?}",meso),
+        content: format!(
+            "These are the parameters of the Mesocycle: {:#?}",
+            program.macrocycle.get("01").unwrap()
+        ),
     };
     messages_for_api.push(sys_message);
 
@@ -746,13 +402,13 @@ pub async fn generate(
             \"rest_day\": [true or false]
             \"exercises\": {{
                 \"exercise[#]\": {{
-                    \"name\": \"{{exercise1_name}}\",
-                    \"sets\": {{exercise1_sets}},
-                    \"rep_range_min\": {{exercise1_rep_range_min}} // Optional
-                    \"rep_range_max\": {{exercise1_rep_range_max}} // Optional
-                    \"rpe\": {{rpe}}, // Optional
-                    \"duration\": {{duration}}, // Optional
-                    \"notes\": \"{{notes}}\", // Optional
+                    \"name\": \"{{exercise1_name}}\", // Required String
+                    \"sets\": {{exercise1_sets}}, // Required Integer
+                    \"rep_range_min\": {{exercise1_rep_range_min}} // Optional Integer
+                    \"rep_range_max\": {{exercise1_rep_range_max}} // Optional Integer
+                    \"rpe\": {{rpe}}, // Optional Float
+                    \"duration\": {{duration}}, // Optional String
+                    \"notes\": \"{{notes}}\", // Optional String
                 }},
                 ...
             }}
@@ -770,12 +426,10 @@ pub async fn generate(
 
     let mut weeks = HashMap::new();
 
-    let num_weeks = if profile.target_timeframe.unwrap_or(1) > 6{
+    let num_weeks = if profile.target_timeframe.unwrap_or(1) > 6 {
         6
-    
     } else {
         profile.target_timeframe.unwrap_or(1)
-
     };
 
     for week_num in 1..=num_weeks {
@@ -816,7 +470,10 @@ pub async fn generate(
                             .get(0)
                             .and_then(|choice| choice.message.as_ref())
                             .ok_or_else(|| {
-                                eprintln!("Unexpected response format from OpenAI for day {}", day_num);
+                                eprintln!(
+                                    "Unexpected response format from OpenAI for day {}",
+                                    day_num
+                                );
                                 HttpResponse::InternalServerError().json(format!(
                                     "Unexpected response from OpenAI for day {}",
                                     day_num
@@ -859,18 +516,15 @@ pub async fn generate(
         weeks.insert(week_num.to_string(), week_response);
     }
 
-    meso.weeks = Some(weeks);
+    program.macrocycle.get_mut("01").unwrap().weeks = Some(weeks);
 
-    let program: FitnessProgram = FitnessProgram::from_meso(meso);
     println!("Generated program: {:#?}", program);
 
     sqlx::query("INSERT INTO fitness_programs (user_id, program_data) VALUES ($1, $2)")
         .bind(user_id)
         .bind(
             serde_json::from_str::<Json<FitnessProgram>>(
-                serde_json::to_string(&program)
-                    .unwrap()
-                    .as_str(),
+                serde_json::to_string(&program).unwrap().as_str(),
             )
             .unwrap(),
         )
@@ -882,16 +536,10 @@ pub async fn generate(
             ServiceError::InternalServerError
         })?;
 
-    Ok(HttpResponse::Ok().body(program.to_user_friendly_string()))
-}
-#[derive(Serialize, Deserialize, Debug)]
-struct Response {
-    id: i32,
-    response: String,
-}
-#[derive(Deserialize)]
-pub struct Info {
-    id: i32,
+    Ok(HttpResponse::Ok().json(Response {
+        id: msg.id,
+        response: program.to_user_friendly_string(),
+    }))
 }
 pub async fn get_responses(
     user: Option<Identity>,
@@ -901,7 +549,7 @@ pub async fn get_responses(
     if let Some(identity) = user {
         if let Ok(user) = get_user(&identity) {
             let mut responses: Vec<Response> = sqlx::query_as::<_, FitnessProgramResponse>(
-                "SELECT id, program_data as fitness_program FROM fitness_programs WHERE user_id = $1",
+                "SELECT * FROM fitness_programs WHERE user_id = $1",
             )
             .bind(user.user_id)
             .fetch_all(pool.get_ref())
@@ -911,11 +559,11 @@ pub async fn get_responses(
                 ServiceError::InternalServerError
             })?
             .iter()
-            .map(|fitness_program_response| {
-                Response { 
-                    response: fitness_program_response.fitness_program.to_user_friendly_string(),
-                    id: fitness_program_response.id,
-                }
+            .map(|fitness_program_response| Response {
+                response: fitness_program_response
+                    .program_data
+                    .to_user_friendly_string(),
+                id: fitness_program_response.id,
             })
             .collect();
 
@@ -924,10 +572,9 @@ pub async fn get_responses(
                 responses, user.user_id
             );
 
-            Ok({
-                responses.reverse();
-                HttpResponse::Ok().json(())
-            })
+            responses.reverse();
+
+            Ok(HttpResponse::Ok().json(responses))
         } else {
             Ok(HttpResponse::Unauthorized().json("User not logged in"))
         }
